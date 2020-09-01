@@ -70,11 +70,11 @@ function setGlassesToScene(objName){
 
     var mtlLoader = new MTLLoader();
     mtlLoader.setMaterialOptions({side:THREE.DoubleSide});
-    mtlLoader.load(objName+'.mtl', materials => {
+    mtlLoader.load(process.env.PUBLIC_URL+"/"+objName+'.mtl', materials => {
         materials.preload();
         const objLoader = new OBJLoader();
         objLoader.setMaterials(materials);
-        objLoader.load(objName+'.obj', obj => {
+        objLoader.load(process.env.PUBLIC_URL+"/"+objName+'.obj', obj => {
             glassesObj = obj;
             glassesObj.name = objName;
             glassesObj.renderOrder = 3;
@@ -84,7 +84,7 @@ function setGlassesToScene(objName){
 }
 
 function getFaceMask(){
-    new OBJLoader().load('facemesh.obj', obj => {
+    new OBJLoader().load(process.env.PUBLIC_URL+'/facemesh.obj', obj => {
         obj.traverse(child => {
             if (child instanceof THREE.Mesh) {
                 faceObj = new THREE.Mesh(child.geometry, new THREE.MeshLambertMaterial({side: THREE.FrontSide, color: "blue"}));

@@ -2,7 +2,7 @@
   "name": "basic-virtual-tryon-glasses",
   "version": "0.1.0",
   "private": true,
-  "homepage": "http://alperen.github.io/basic-virtual-tryon-glasses",
+  "homepage": "https://alperenuzun.github.io/basic-virtual-tryon-glasses",
   "dependencies": {
     "@tensorflow-models/facemesh": "0.0.1",
     "@tensorflow/tfjs-converter": "^1.7.2",
