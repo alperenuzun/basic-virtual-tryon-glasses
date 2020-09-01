@@ -1,0 +1,23 @@
+# Blender MTL File: 'faceandglasses.blend'
+# Material Count: 2
+
+newmtl sunglasses_body
+Ns 50.000007
+Ka 1.000000 1.000000 1.000000
+Kd 1.000000 1.000000 1.000000
+Ks 0.540000 0.540000 0.540000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd sglassestexture.jpg
+
+newmtl sunglasses_lens
+Ns 50.000007
+Ka 1.000000 1.000000 1.000000
+Kd 0.039200 0.015700 0.000000
+Ks 0.540000 0.540000 0.540000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 0.800000
+illum 9
