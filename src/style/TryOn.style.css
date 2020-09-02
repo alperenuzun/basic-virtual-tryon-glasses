@@ -1,0 +1,21 @@
+#tryon-video {
+  display: none;
+  width: 640px;
+  height: 480px;
+}
+#threejsContainer{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+#threejsContainer canvas {
+  width: 640px;
+  height: 480px;
+  object-fit: cover;
+}
+
+.videosource {
+  display: none;
+}

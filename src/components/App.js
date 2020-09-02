@@ -1,12 +1,12 @@
 import React, { Component } from 'react';
-import { FaceFilter } from './FaceFilter'
+import { TryOn } from './TryOn'
 
 export default class App extends Component {
 
   render() {
     return (
       <div className="App">
-        <FaceFilter  onReady={this.ready}/>
+        <TryOn onReady={this.ready}/>
       </div>
 
     );

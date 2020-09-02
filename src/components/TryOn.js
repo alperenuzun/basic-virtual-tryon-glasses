@@ -1,20 +1,18 @@
 import React from 'react';
 import { useEffect } from 'react';
-import '../style/FaceFilter.style.css';
+import '../style/TryOn.style.css';
 
 import {
     IntializeEngine, IntializeThreejs
 } from './render.js';
 
 
-export const FaceFilter = () => {
-
-    var video;
+export const TryOn = () => {
 
     useEffect(() => {
 
         async function init() {
-            video = document.getElementById('facemesh-video');
+            var video = document.getElementById('tryon-video');
 
             await navigator.mediaDevices.getUserMedia({
                 'audio': false,
@@ -42,7 +40,7 @@ export const FaceFilter = () => {
     return (
         <div className="row arcomp">
             <div id="threejsContainer">
-                <video id="facemesh-video"></video>
+                <video id="tryon-video"></video>
             </div>
         </div>
 
