@@ -14,7 +14,7 @@
 importScripts("https://storage.googleapis.com/workbox-cdn/releases/4.3.1/workbox-sw.js");
 
 importScripts(
-  "/basic-virtual-tryon-glasses/precache-manifest.1ab82c4369402bbca53ac4711a2d9d00.js"
+  "/basic-virtual-tryon-glasses/precache-manifest.7f1a0bd63b5411a4c7123b240e269218.js"
 );
 
 self.addEventListener('message', (event) => {
