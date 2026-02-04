@@ -443,16 +443,12 @@ const LANDMARKS = {
 // ============================================
 // GLASSES POSITIONING
 // ============================================
-function calculateGlassesTransform(landmarks, videoWidth, videoHeight) {
+function calculateGlassesTransform(landmarks, transformMatrix, videoWidth, videoHeight) {
     // Get landmarks
     const leftEyeOuter = landmarks[LANDMARKS.LEFT_EYE_OUTER];
     const leftEyeInner = landmarks[LANDMARKS.LEFT_EYE_INNER];
     const rightEyeInner = landmarks[LANDMARKS.RIGHT_EYE_INNER];
     const rightEyeOuter = landmarks[LANDMARKS.RIGHT_EYE_OUTER];
-    const forehead = landmarks[LANDMARKS.FOREHEAD];
-    const chin = landmarks[LANDMARKS.CHIN];
-    const leftCheek = landmarks[LANDMARKS.LEFT_CHEEK];
-    const rightCheek = landmarks[LANDMARKS.RIGHT_CHEEK];
 
     // Calculate eye center (where glasses bridge sits)
     const eyeCenterX = (leftEyeInner.x + rightEyeInner.x) / 2;
@@ -460,10 +456,10 @@ function calculateGlassesTransform(landmarks, videoWidth, videoHeight) {
     const eyeCenterZ = (leftEyeInner.z + rightEyeInner.z) / 2;
 
     // Convert normalized coords to screen space (centered at origin)
-    // Note: Video is mirrored, so we negate X
+    // Video is mirrored, so we negate X
     const posX = -(eyeCenterX - 0.5) * videoWidth;
     const posY = -(eyeCenterY - 0.5) * videoHeight;
-    const posZ = -eyeCenterZ * videoWidth * 0.5 + 50; // Bring forward
+    const posZ = -eyeCenterZ * videoWidth * 0.5 + 50;
 
     // Calculate face width for scaling
     const faceWidth = Math.sqrt(
@@ -471,31 +467,67 @@ function calculateGlassesTransform(landmarks, videoWidth, videoHeight) {
         Math.pow((rightEyeOuter.y - leftEyeOuter.y) * videoHeight, 2)
     );
 
-    // Scale glasses to fit face (base glasses width is ~6 units)
-    const baseGlassesWidth = 6;
-    const targetWidth = faceWidth * 1.15; // Slightly wider than eye distance
+    // Scale glasses to fit face
+    const baseGlassesWidth = 5.5;
+    const targetWidth = faceWidth * 1.2;
     const scale = targetWidth / baseGlassesWidth;
 
-    // Calculate rotations
-    // Roll (Z-axis) - head tilt
-    const roll = Math.atan2(
-        (rightEyeOuter.y - leftEyeOuter.y) * videoHeight,
-        (rightEyeOuter.x - leftEyeOuter.x) * videoWidth
-    );
+    // Extract rotation from MediaPipe transformation matrix
+    let rotation = new THREE.Euler(0, 0, 0, 'YXZ');
 
-    // Yaw (Y-axis) - head turn left/right
-    const yaw = Math.asin(
-        Math.max(-1, Math.min(1, (rightCheek.z - leftCheek.z) * 2))
-    );
+    if (transformMatrix && transformMatrix.data) {
+        // MediaPipe provides a 4x4 transformation matrix in column-major order
+        const m = transformMatrix.data;
 
-    // Pitch (X-axis) - head tilt up/down
-    const faceVertical = (forehead.y - chin.y) * videoHeight;
-    const faceDepth = (forehead.z - chin.z) * videoWidth;
-    const pitch = Math.atan2(faceDepth, faceVertical);
+        // Create Three.js Matrix4 from the data
+        const matrix = new THREE.Matrix4();
+        matrix.set(
+            m[0], m[4], m[8], m[12],
+            m[1], m[5], m[9], m[13],
+            m[2], m[6], m[10], m[14],
+            m[3], m[7], m[11], m[15]
+        );
+
+        // Extract rotation from matrix
+        const rotationMatrix = new THREE.Matrix4();
+        rotationMatrix.extractRotation(matrix);
+
+        // Convert to Euler angles
+        rotation.setFromRotationMatrix(rotationMatrix, 'YXZ');
+
+        // Adjust for coordinate system differences and mirroring
+        rotation.x = -rotation.x;
+        // rotation.y stays the same
+        rotation.z = -rotation.z;
+    } else {
+        // Fallback: calculate rotation from landmarks
+        const leftCheek = landmarks[LANDMARKS.LEFT_CHEEK];
+        const rightCheek = landmarks[LANDMARKS.RIGHT_CHEEK];
+        const forehead = landmarks[LANDMARKS.FOREHEAD];
+        const chin = landmarks[LANDMARKS.CHIN];
+
+        // Roll (Z-axis) - head tilt sideways
+        const roll = Math.atan2(
+            (rightEyeOuter.y - leftEyeOuter.y),
+            (rightEyeOuter.x - leftEyeOuter.x)
+        );
+
+        // Yaw (Y-axis) - head turn left/right
+        const yaw = Math.asin(
+            Math.max(-1, Math.min(1, (rightCheek.z - leftCheek.z) * 3))
+        );
+
+        // Pitch (X-axis) - head tilt up/down
+        const pitch = Math.asin(
+            Math.max(-1, Math.min(1, (chin.z - forehead.z) * 2))
+        );
+
+        rotation.set(pitch, -yaw, -roll, 'YXZ');
+    }
 
     return {
         position: new THREE.Vector3(posX, posY, posZ),
-        rotation: new THREE.Euler(-pitch * 0.5, yaw, -roll, 'YXZ'),
+        rotation: rotation,
         scale: new THREE.Vector3(scale, scale, scale)
     };
 }
@@ -527,8 +559,15 @@ async function trackFace() {
             if (results.faceLandmarks && results.faceLandmarks.length > 0) {
                 const landmarks = results.faceLandmarks[0];
 
+                // Get transformation matrix if available
+                const transformMatrix = results.facialTransformationMatrixes &&
+                    results.facialTransformationMatrixes.length > 0
+                    ? results.facialTransformationMatrixes[0]
+                    : null;
+
                 const rawTransform = calculateGlassesTransform(
                     landmarks,
+                    transformMatrix,
                     video.videoWidth,
                     video.videoHeight
                 );
