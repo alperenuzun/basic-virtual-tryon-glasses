@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 // ============================================
@@ -10,6 +11,7 @@ let renderer = null;
 let camera = null;
 let scene = null;
 let glassesGroup = null;
+let faceOccluder = null;  // Invisible face mesh for depth occlusion
 let videoTexture = null;
 let isRunning = false;
 let lastVideoTime = -1;
@@ -55,6 +57,7 @@ class SmoothingFilter {
 }
 
 const glassesFilter = new SmoothingFilter(0.35);
+const occluderFilter = new SmoothingFilter(0.35);
 
 // ============================================
 // 3D GLASSES MODEL - Realistic Aviator Style
@@ -297,6 +300,53 @@ function createGlassesModel() {
 }
 
 // ============================================
+// FACE OCCLUDER - Invisible depth mask
+// ============================================
+function loadFaceOccluder() {
+    return new Promise((resolve) => {
+        const loader = new OBJLoader();
+        loader.load(
+            process.env.PUBLIC_URL + '/obj/facemesh.obj',
+            (obj) => {
+                // Create occluder group with same structure as glasses
+                const occluderOuter = new THREE.Group();
+                const occluderInner = new THREE.Group();
+
+                obj.traverse((child) => {
+                    if (child instanceof THREE.Mesh) {
+                        // Create invisible material that only writes to depth buffer
+                        const occlusionMaterial = new THREE.MeshBasicMaterial({
+                            colorWrite: false,  // Don't write to color buffer (invisible)
+                            depthWrite: true,   // Write to depth buffer (occludes objects behind)
+                            side: THREE.DoubleSide
+                        });
+
+                        const occluderMesh = new THREE.Mesh(child.geometry.clone(), occlusionMaterial);
+                        occluderInner.add(occluderMesh);
+                    }
+                });
+
+                // Rotate inner group to match glasses orientation
+                occluderInner.rotation.y = Math.PI;
+
+                occluderOuter.add(occluderInner);
+                occluderOuter.renderOrder = 1;  // Render before glasses
+                occluderOuter.visible = false;
+
+                faceOccluder = occluderOuter;
+                scene.add(faceOccluder);
+                resolve();
+            },
+            undefined,
+            (error) => {
+                console.warn('Face occluder not loaded:', error);
+                resolve();  // Continue without occluder
+            }
+        );
+    });
+}
+
+// ============================================
 // MEDIAPIPE FACE LANDMARKER
 // ============================================
 export async function initializeFaceLandmarker(onProgress) {
@@ -390,7 +440,13 @@ export async function initializeScene(modelName, onProgress) {
     // Create glasses
     onProgress?.('Creating 3D glasses...');
     glassesGroup = createGlassesModel();
+    glassesGroup.renderOrder = 2;  // Render after occluder
     scene.add(glassesGroup);
+
+    // Load face occluder mesh for realistic depth occlusion
+    // This invisible mesh hides the glasses parts that should be behind the face
+    onProgress?.('Loading face mesh...');
+    await loadFaceOccluder();
 
     // Setup renderer
     renderer = new THREE.WebGLRenderer({
@@ -556,6 +612,7 @@ export function startTracking() {
 export function stopTracking() {
     isRunning = false;
     glassesFilter.reset();
+    occluderFilter.reset();
 }
 
 async function trackFace() {
@@ -597,8 +654,24 @@ async function trackFace() {
                     glassesGroup.rotation.copy(smoothed.rotation);
                     glassesGroup.scale.copy(smoothed.scale);
                 }
+
+                // Update face occluder with same transform (slightly adjusted for face shape)
+                if (faceOccluder) {
+                    const occluderSmoothed = occluderFilter.update(
+                        rawTransform.position.clone(),
+                        rawTransform.rotation.clone(),
+                        rawTransform.scale.clone().multiplyScalar(1.15) // Slightly larger to cover face
+                    );
+
+                    faceOccluder.visible = true;
+                    faceOccluder.position.copy(occluderSmoothed.position);
+                    faceOccluder.position.z -= 20; // Push slightly behind glasses
+                    faceOccluder.rotation.copy(occluderSmoothed.rotation);
+                    faceOccluder.scale.copy(occluderSmoothed.scale);
+                }
             } else {
                 if (glassesGroup) glassesGroup.visible = false;
+                if (faceOccluder) faceOccluder.visible = false;
             }
         } catch (error) {
             console.error('Tracking error:', error);
@@ -639,8 +712,10 @@ export function cleanup() {
     }
 
     glassesFilter.reset();
+    occluderFilter.reset();
     camera = null;
     glassesGroup = null;
+    faceOccluder = null;
     videoTexture = null;
     video = null;
     lastVideoTime = -1;
