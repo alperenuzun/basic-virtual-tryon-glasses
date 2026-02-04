@@ -1,15 +1,12 @@
-import React, { Component } from 'react';
-import { TryOn } from './TryOn'
+import React from 'react';
+import { TryOn } from './TryOn';
 
-export default class App extends Component {
-
-  render() {
+function App() {
     return (
-      <div className="App">
-        <TryOn onReady={this.ready}/>
-      </div>
-
+        <div className="App">
+            <TryOn />
+        </div>
     );
-  }
-  
 }
+
+export default App;
