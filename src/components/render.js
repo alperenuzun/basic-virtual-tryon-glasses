@@ -60,6 +60,11 @@ const glassesFilter = new SmoothingFilter(0.35);
 // 3D GLASSES MODEL - Realistic Aviator Style
 // ============================================
 function createGlassesModel() {
+    // Outer group for positioning/rotation from face tracking
+    const outerGroup = new THREE.Group();
+
+    // Inner group for the actual glasses model - this gets rotated 180 degrees
+    // so the front of glasses faces the user (camera)
     const group = new THREE.Group();
 
     // === MATERIALS ===
@@ -280,11 +285,15 @@ function createGlassesModel() {
     const rightTip = new THREE.Mesh(rightTipGeom, frameMaterial);
     group.add(rightTip);
 
-    // Rotate the glasses 180 degrees so the front faces the camera (user sees front of glasses)
+    // Rotate inner group 180 degrees so the front of glasses faces the camera
+    // This rotation is preserved even when outer group rotation is updated by face tracking
     group.rotation.y = Math.PI;
 
-    group.visible = false;
-    return group;
+    // Add inner group to outer group
+    outerGroup.add(group);
+    outerGroup.visible = false;
+
+    return outerGroup;
 }
 
 // ============================================
