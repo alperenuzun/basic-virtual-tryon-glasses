@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 // ============================================
@@ -11,10 +10,51 @@ let renderer = null;
 let camera = null;
 let scene = null;
 let glassesGroup = null;
-let faceOccluder = null;  // Invisible face mesh for depth occlusion
+let faceOccluder = null;  // Dynamic face mesh for depth occlusion
+let occluderGeometry = null;
 let videoTexture = null;
 let isRunning = false;
 let lastVideoTime = -1;
+
+// Face mesh triangulation indices (subset for face occlusion - covers main face area)
+// These indices connect the 468 MediaPipe landmarks into triangles
+const FACE_TRIANGLES = [
+    // Forehead and upper face
+    10, 338, 297, 10, 297, 332, 10, 332, 284, 10, 284, 251, 10, 251, 389,
+    10, 389, 356, 10, 356, 454, 10, 454, 323, 10, 323, 361, 10, 361, 288,
+    10, 288, 397, 10, 397, 365, 10, 365, 379, 10, 379, 378, 10, 378, 400,
+    10, 400, 377, 10, 377, 152, 10, 152, 148, 10, 148, 176, 10, 176, 149,
+    10, 149, 150, 10, 150, 136, 10, 136, 172, 10, 172, 58, 10, 58, 132,
+    10, 132, 93, 10, 93, 234, 10, 234, 127, 10, 127, 162, 10, 162, 21,
+    10, 21, 54, 10, 54, 103, 10, 103, 67, 10, 67, 109,
+    // Left cheek
+    234, 93, 132, 132, 58, 172, 172, 136, 150, 150, 149, 176, 176, 148, 152,
+    // Right cheek
+    454, 356, 389, 389, 251, 284, 284, 332, 297, 297, 338, 10,
+    // Nose area
+    1, 2, 98, 1, 98, 327, 2, 326, 327, 98, 2, 327,
+    // Around eyes - left
+    33, 246, 161, 161, 160, 159, 159, 158, 157, 157, 173, 133,
+    33, 7, 163, 163, 144, 145, 145, 153, 154, 154, 155, 133,
+    // Around eyes - right
+    263, 466, 388, 388, 387, 386, 386, 385, 384, 384, 398, 362,
+    263, 249, 390, 390, 373, 374, 374, 380, 381, 381, 382, 362,
+    // Nose bridge
+    6, 122, 188, 6, 188, 114, 6, 114, 245, 6, 245, 193,
+    6, 351, 412, 6, 412, 343, 6, 343, 465, 6, 465, 417,
+    // Lower face / jaw
+    152, 377, 400, 400, 378, 379, 379, 365, 397, 397, 288, 361,
+    361, 323, 454, 454, 356, 389, 389, 251, 284, 284, 332, 297,
+    148, 176, 149, 149, 150, 136, 136, 172, 58, 58, 132, 93,
+    93, 234, 127, 127, 162, 21, 21, 54, 103, 103, 67, 109,
+    // Chin
+    152, 148, 175, 175, 396, 377, 152, 175, 377,
+    // Fill gaps
+    168, 6, 197, 197, 195, 5, 5, 4, 1, 1, 19, 94,
+    94, 2, 164, 164, 0, 267, 267, 269, 270, 270, 409, 291,
+    291, 375, 321, 321, 405, 314, 314, 17, 84, 84, 181, 91,
+    91, 146, 61, 61, 185, 40, 40, 39, 37, 37, 0, 267
+];
 
 // ============================================
 // SMOOTHING SYSTEM - One Euro Filter inspired
@@ -57,7 +97,6 @@ class SmoothingFilter {
 }
 
 const glassesFilter = new SmoothingFilter(0.35);
-const occluderFilter = new SmoothingFilter(0.35);
 
 // ============================================
 // 3D GLASSES MODEL - Realistic Aviator Style
@@ -300,50 +339,57 @@ function createGlassesModel() {
 }
 
 // ============================================
-// FACE OCCLUDER - Invisible depth mask
+// FACE OCCLUDER - Dynamic depth mask from landmarks
 // ============================================
-function loadFaceOccluder() {
-    return new Promise((resolve) => {
-        const loader = new OBJLoader();
-        loader.load(
-            process.env.PUBLIC_URL + '/obj/facemesh.obj',
-            (obj) => {
-                // Create occluder group with same structure as glasses
-                const occluderOuter = new THREE.Group();
-                const occluderInner = new THREE.Group();
+function createFaceOccluder() {
+    // Create geometry with placeholder vertices (will be updated each frame)
+    occluderGeometry = new THREE.BufferGeometry();
 
-                obj.traverse((child) => {
-                    if (child instanceof THREE.Mesh) {
-                        // Create invisible material that only writes to depth buffer
-                        const occlusionMaterial = new THREE.MeshBasicMaterial({
-                            colorWrite: false,  // Don't write to color buffer (invisible)
-                            depthWrite: true,   // Write to depth buffer (occludes objects behind)
-                            side: THREE.DoubleSide
-                        });
+    // Initialize with 468 vertices (MediaPipe landmark count)
+    const positions = new Float32Array(468 * 3);
+    occluderGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-                        const occluderMesh = new THREE.Mesh(child.geometry.clone(), occlusionMaterial);
-                        occluderInner.add(occluderMesh);
-                    }
-                });
+    // Set triangle indices
+    const indices = new Uint16Array(FACE_TRIANGLES);
+    occluderGeometry.setIndex(new THREE.BufferAttribute(indices, 1));
 
-                // Rotate inner group to match glasses orientation
-                occluderInner.rotation.y = Math.PI;
-
-                occluderOuter.add(occluderInner);
-                occluderOuter.renderOrder = 1;  // Render before glasses
-                occluderOuter.visible = false;
-
-                faceOccluder = occluderOuter;
-                scene.add(faceOccluder);
-                resolve();
-            },
-            undefined,
-            (error) => {
-                console.warn('Face occluder not loaded:', error);
-                resolve();  // Continue without occluder
-            }
-        );
+    // Create invisible material - writes to depth buffer only
+    const occlusionMaterial = new THREE.MeshBasicMaterial({
+        colorWrite: false,
+        depthWrite: true,
+        side: THREE.DoubleSide
     });
+
+    faceOccluder = new THREE.Mesh(occluderGeometry, occlusionMaterial);
+    faceOccluder.renderOrder = 1;  // Render before glasses (renderOrder 2)
+    faceOccluder.visible = false;
+    faceOccluder.frustumCulled = false;  // Always render
+
+    scene.add(faceOccluder);
+}
+
+function updateFaceOccluder(landmarks, videoWidth, videoHeight) {
+    if (!faceOccluder || !occluderGeometry) return;
+
+    const positions = occluderGeometry.attributes.position.array;
+
+    // Update vertex positions from landmarks
+    for (let i = 0; i < landmarks.length && i < 468; i++) {
+        const landmark = landmarks[i];
+
+        // Convert normalized coordinates to screen space (matching glasses coordinate system)
+        const x = -(landmark.x - 0.5) * videoWidth;
+        const y = -(landmark.y - 0.5) * videoHeight;
+        const z = -landmark.z * videoWidth * 0.5 + 30;  // Slightly in front for proper occlusion
+
+        positions[i * 3] = x;
+        positions[i * 3 + 1] = y;
+        positions[i * 3 + 2] = z;
+    }
+
+    occluderGeometry.attributes.position.needsUpdate = true;
+    occluderGeometry.computeVertexNormals();
+    occluderGeometry.computeBoundingSphere();
 }
 
 // ============================================
@@ -443,10 +489,9 @@ export async function initializeScene(modelName, onProgress) {
     glassesGroup.renderOrder = 2;  // Render after occluder
     scene.add(glassesGroup);
 
-    // Load face occluder mesh for realistic depth occlusion
+    // Create dynamic face occluder for realistic depth occlusion
     // This invisible mesh hides the glasses parts that should be behind the face
-    onProgress?.('Loading face mesh...');
-    await loadFaceOccluder();
+    createFaceOccluder();
 
     // Setup renderer
     renderer = new THREE.WebGLRenderer({
@@ -612,7 +657,6 @@ export function startTracking() {
 export function stopTracking() {
     isRunning = false;
     glassesFilter.reset();
-    occluderFilter.reset();
 }
 
 async function trackFace() {
@@ -655,19 +699,10 @@ async function trackFace() {
                     glassesGroup.scale.copy(smoothed.scale);
                 }
 
-                // Update face occluder with same transform (slightly adjusted for face shape)
+                // Update face occluder mesh directly from landmarks
                 if (faceOccluder) {
-                    const occluderSmoothed = occluderFilter.update(
-                        rawTransform.position.clone(),
-                        rawTransform.rotation.clone(),
-                        rawTransform.scale.clone().multiplyScalar(1.15) // Slightly larger to cover face
-                    );
-
+                    updateFaceOccluder(landmarks, video.videoWidth, video.videoHeight);
                     faceOccluder.visible = true;
-                    faceOccluder.position.copy(occluderSmoothed.position);
-                    faceOccluder.position.z -= 20; // Push slightly behind glasses
-                    faceOccluder.rotation.copy(occluderSmoothed.rotation);
-                    faceOccluder.scale.copy(occluderSmoothed.scale);
                 }
             } else {
                 if (glassesGroup) glassesGroup.visible = false;
@@ -712,10 +747,10 @@ export function cleanup() {
     }
 
     glassesFilter.reset();
-    occluderFilter.reset();
     camera = null;
     glassesGroup = null;
     faceOccluder = null;
+    occluderGeometry = null;
     videoTexture = null;
     video = null;
     lastVideoTime = -1;
