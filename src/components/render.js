@@ -57,165 +57,227 @@ class SmoothingFilter {
 const glassesFilter = new SmoothingFilter(0.35);
 
 // ============================================
-// 3D GLASSES MODEL - Programmatic Creation
+// 3D GLASSES MODEL - Realistic Aviator Style
 // ============================================
 function createGlassesModel() {
     const group = new THREE.Group();
 
-    // Materials
-    const frameMaterial = new THREE.MeshPhongMaterial({
-        color: 0x1a1a1a,
-        shininess: 100,
-        specular: 0x444444,
+    // === MATERIALS ===
+    const frameMaterial = new THREE.MeshStandardMaterial({
+        color: 0x2c2c2c,
+        metalness: 0.8,
+        roughness: 0.3,
     });
 
-    const lensMaterial = new THREE.MeshPhongMaterial({
-        color: 0x2a1a0a,
+    const lensMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0x3d2817,
         transparent: true,
-        opacity: 0.7,
-        shininess: 150,
-        specular: 0x333333,
+        opacity: 0.75,
+        metalness: 0.1,
+        roughness: 0.1,
+        clearcoat: 0.3,
         side: THREE.DoubleSide,
     });
 
-    const metalMaterial = new THREE.MeshPhongMaterial({
-        color: 0xcccccc,
-        shininess: 200,
-        specular: 0xffffff,
+    const metalMaterial = new THREE.MeshStandardMaterial({
+        color: 0x888888,
+        metalness: 0.9,
+        roughness: 0.2,
     });
 
-    // Dimensions (in scene units, calibrated for face)
-    const lensWidth = 2.4;
-    const lensHeight = 1.8;
-    const lensDepth = 0.15;
-    const bridgeWidth = 0.8;
-    const frameThickness = 0.12;
-    const templeLength = 4.5;
+    // === DIMENSIONS ===
+    const lensWidth = 2.2;
+    const lensHeight = 1.6;
+    const lensSeparation = 0.5; // Gap between lenses (nose bridge area)
+    const frameThickness = 0.08;
+    const templeLength = 5.0; // Length going back towards ears
+
+    // Lens X positions
+    const leftLensX = -(lensWidth / 2 + lensSeparation / 2);
+    const rightLensX = (lensWidth / 2 + lensSeparation / 2);
+
+    // === CREATE AVIATOR LENS SHAPE ===
+    function createAviatorLensShape(width, height) {
+        const shape = new THREE.Shape();
+        const w = width / 2;
+        const h = height / 2;
+        const r = 0.3; // Corner radius
+
+        // Aviator style: wider at top, narrower at bottom with rounded corners
+        shape.moveTo(-w + r, -h);
+        shape.lineTo(w - r, -h);
+        shape.quadraticCurveTo(w, -h, w, -h + r);
+        shape.lineTo(w, h - r);
+        shape.quadraticCurveTo(w, h, w - r, h);
+        shape.lineTo(-w + r, h);
+        shape.quadraticCurveTo(-w, h, -w, h - r);
+        shape.lineTo(-w, -h + r);
+        shape.quadraticCurveTo(-w, -h, -w + r, -h);
+
+        return shape;
+    }
 
     // === LEFT LENS ===
-    const leftLensGeom = new THREE.BoxGeometry(lensWidth, lensHeight, lensDepth);
-    // Round the corners using edge beveling
+    const leftLensShape = createAviatorLensShape(lensWidth, lensHeight);
+    const leftLensGeom = new THREE.ExtrudeGeometry(leftLensShape, {
+        depth: 0.05,
+        bevelEnabled: true,
+        bevelThickness: 0.02,
+        bevelSize: 0.02,
+        bevelSegments: 2
+    });
     const leftLens = new THREE.Mesh(leftLensGeom, lensMaterial);
-    leftLens.position.set(-1.5, 0, 0);
+    leftLens.position.set(leftLensX, 0, 0);
     group.add(leftLens);
 
-    // Left lens frame (border)
-    const leftFrameShape = new THREE.Shape();
-    const fw = lensWidth / 2 + frameThickness;
-    const fh = lensHeight / 2 + frameThickness;
-    leftFrameShape.moveTo(-fw, -fh);
-    leftFrameShape.lineTo(fw, -fh);
-    leftFrameShape.lineTo(fw, fh);
-    leftFrameShape.lineTo(-fw, fh);
-    leftFrameShape.lineTo(-fw, -fh);
+    // === RIGHT LENS ===
+    const rightLensGeom = new THREE.ExtrudeGeometry(leftLensShape, {
+        depth: 0.05,
+        bevelEnabled: true,
+        bevelThickness: 0.02,
+        bevelSize: 0.02,
+        bevelSegments: 2
+    });
+    const rightLens = new THREE.Mesh(rightLensGeom, lensMaterial);
+    rightLens.position.set(rightLensX, 0, 0);
+    group.add(rightLens);
 
-    // Hole for lens
-    const leftHole = new THREE.Path();
-    const hw = lensWidth / 2;
-    const hh = lensHeight / 2;
-    leftHole.moveTo(-hw, -hh);
-    leftHole.lineTo(hw, -hh);
-    leftHole.lineTo(hw, hh);
-    leftHole.lineTo(-hw, hh);
-    leftHole.lineTo(-hw, -hh);
-    leftFrameShape.holes.push(leftHole);
+    // === FRAME RIMS ===
+    function createFrameRim(lensShape, thickness) {
+        const outerShape = new THREE.Shape();
+        const w = lensWidth / 2 + thickness;
+        const h = lensHeight / 2 + thickness;
+        const r = 0.35;
 
+        outerShape.moveTo(-w + r, -h);
+        outerShape.lineTo(w - r, -h);
+        outerShape.quadraticCurveTo(w, -h, w, -h + r);
+        outerShape.lineTo(w, h - r);
+        outerShape.quadraticCurveTo(w, h, w - r, h);
+        outerShape.lineTo(-w + r, h);
+        outerShape.quadraticCurveTo(-w, h, -w, h - r);
+        outerShape.lineTo(-w, -h + r);
+        outerShape.quadraticCurveTo(-w, -h, -w + r, -h);
+
+        outerShape.holes.push(lensShape);
+        return outerShape;
+    }
+
+    const leftFrameShape = createFrameRim(createAviatorLensShape(lensWidth - 0.02, lensHeight - 0.02), frameThickness);
     const leftFrameGeom = new THREE.ExtrudeGeometry(leftFrameShape, {
-        depth: lensDepth + 0.05,
+        depth: 0.12,
         bevelEnabled: false
     });
     const leftFrame = new THREE.Mesh(leftFrameGeom, frameMaterial);
-    leftFrame.position.set(-1.5, 0, -lensDepth / 2 - 0.025);
+    leftFrame.position.set(leftLensX, 0, -0.03);
     group.add(leftFrame);
 
-    // === RIGHT LENS ===
-    const rightLensGeom = new THREE.BoxGeometry(lensWidth, lensHeight, lensDepth);
-    const rightLens = new THREE.Mesh(rightLensGeom, lensMaterial);
-    rightLens.position.set(1.5, 0, 0);
-    group.add(rightLens);
-
-    // Right lens frame
-    const rightFrameShape = new THREE.Shape();
-    rightFrameShape.moveTo(-fw, -fh);
-    rightFrameShape.lineTo(fw, -fh);
-    rightFrameShape.lineTo(fw, fh);
-    rightFrameShape.lineTo(-fw, fh);
-    rightFrameShape.lineTo(-fw, -fh);
-
-    const rightHole = new THREE.Path();
-    rightHole.moveTo(-hw, -hh);
-    rightHole.lineTo(hw, -hh);
-    rightHole.lineTo(hw, hh);
-    rightHole.lineTo(-hw, hh);
-    rightHole.lineTo(-hw, -hh);
-    rightFrameShape.holes.push(rightHole);
-
+    const rightFrameShape = createFrameRim(createAviatorLensShape(lensWidth - 0.02, lensHeight - 0.02), frameThickness);
     const rightFrameGeom = new THREE.ExtrudeGeometry(rightFrameShape, {
-        depth: lensDepth + 0.05,
+        depth: 0.12,
         bevelEnabled: false
     });
     const rightFrame = new THREE.Mesh(rightFrameGeom, frameMaterial);
-    rightFrame.position.set(1.5, 0, -lensDepth / 2 - 0.025);
+    rightFrame.position.set(rightLensX, 0, -0.03);
     group.add(rightFrame);
 
-    // === NOSE BRIDGE ===
-    const bridgeGeom = new THREE.BoxGeometry(bridgeWidth, frameThickness * 2, lensDepth);
+    // === NOSE BRIDGE (connects the two lenses) ===
+    const bridgeCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(leftLensX + lensWidth / 2, 0.1, 0.05),
+        new THREE.Vector3(0, 0.25, 0.15),
+        new THREE.Vector3(rightLensX - lensWidth / 2, 0.1, 0.05)
+    ]);
+    const bridgeGeom = new THREE.TubeGeometry(bridgeCurve, 16, 0.06, 8, false);
     const bridge = new THREE.Mesh(bridgeGeom, frameMaterial);
-    bridge.position.set(0, 0.2, 0);
     group.add(bridge);
 
     // === NOSE PADS ===
-    const nosePadGeom = new THREE.SphereGeometry(0.12, 8, 8);
+    const nosePadGeom = new THREE.SphereGeometry(0.1, 12, 12);
+
+    const leftPadArm = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(leftLensX + lensWidth / 4, -0.2, 0.05),
+        new THREE.Vector3(leftLensX + lensWidth / 4 + 0.15, -0.35, 0.2)
+    ]);
+    const leftPadArmGeom = new THREE.TubeGeometry(leftPadArm, 8, 0.03, 6, false);
+    const leftPadArmMesh = new THREE.Mesh(leftPadArmGeom, metalMaterial);
+    group.add(leftPadArmMesh);
+
     const leftNosePad = new THREE.Mesh(nosePadGeom, metalMaterial);
-    leftNosePad.position.set(-0.35, -0.4, 0.15);
-    leftNosePad.scale.set(1, 1.5, 0.5);
+    leftNosePad.position.set(leftLensX + lensWidth / 4 + 0.15, -0.4, 0.25);
+    leftNosePad.scale.set(0.8, 1.2, 0.4);
     group.add(leftNosePad);
 
+    const rightPadArm = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(rightLensX - lensWidth / 4, -0.2, 0.05),
+        new THREE.Vector3(rightLensX - lensWidth / 4 - 0.15, -0.35, 0.2)
+    ]);
+    const rightPadArmGeom = new THREE.TubeGeometry(rightPadArm, 8, 0.03, 6, false);
+    const rightPadArmMesh = new THREE.Mesh(rightPadArmGeom, metalMaterial);
+    group.add(rightPadArmMesh);
+
     const rightNosePad = new THREE.Mesh(nosePadGeom, metalMaterial);
-    rightNosePad.position.set(0.35, -0.4, 0.15);
-    rightNosePad.scale.set(1, 1.5, 0.5);
+    rightNosePad.position.set(rightLensX - lensWidth / 4 - 0.15, -0.4, 0.25);
+    rightNosePad.scale.set(0.8, 1.2, 0.4);
     group.add(rightNosePad);
 
-    // === TEMPLES (Arms) ===
-    // Left temple
-    const leftTempleGeom = new THREE.BoxGeometry(templeLength, frameThickness, frameThickness);
-    const leftTemple = new THREE.Mesh(leftTempleGeom, frameMaterial);
-    leftTemple.position.set(-1.5 - lensWidth / 2 - templeLength / 2, lensHeight / 2 - frameThickness, -0.2);
-    group.add(leftTemple);
+    // === TEMPLES (Arms) - Going BACKWARD towards ears ===
+    const hingeY = lensHeight / 2 - 0.15;
 
-    // Left temple hinge
-    const leftHingeGeom = new THREE.BoxGeometry(0.2, frameThickness * 2, frameThickness * 2);
+    // Left temple - starts at left frame edge, goes back in -Z direction
+    const leftHingeX = leftLensX - lensWidth / 2 - frameThickness;
+
+    // Hinge connector
+    const leftHingeGeom = new THREE.BoxGeometry(0.15, 0.2, 0.15);
     const leftHinge = new THREE.Mesh(leftHingeGeom, metalMaterial);
-    leftHinge.position.set(-1.5 - lensWidth / 2 - 0.1, lensHeight / 2 - frameThickness, -0.1);
+    leftHinge.position.set(leftHingeX, hingeY, 0);
     group.add(leftHinge);
 
-    // Right temple
-    const rightTempleGeom = new THREE.BoxGeometry(templeLength, frameThickness, frameThickness);
-    const rightTemple = new THREE.Mesh(rightTempleGeom, frameMaterial);
-    rightTemple.position.set(1.5 + lensWidth / 2 + templeLength / 2, lensHeight / 2 - frameThickness, -0.2);
-    group.add(rightTemple);
-
-    // Right temple hinge
-    const rightHingeGeom = new THREE.BoxGeometry(0.2, frameThickness * 2, frameThickness * 2);
-    const rightHinge = new THREE.Mesh(rightHingeGeom, metalMaterial);
-    rightHinge.position.set(1.5 + lensWidth / 2 + 0.1, lensHeight / 2 - frameThickness, -0.1);
-    group.add(rightHinge);
-
-    // Temple tips (ear hooks)
-    const tipCurve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(-0.1, -0.2, 0.1),
-        new THREE.Vector3(-0.15, -0.5, 0.15),
+    // Temple arm going backward (Z axis)
+    const leftTempleCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(leftHingeX, hingeY, -0.05),
+        new THREE.Vector3(leftHingeX - 0.1, hingeY, -templeLength * 0.4),
+        new THREE.Vector3(leftHingeX - 0.15, hingeY - 0.1, -templeLength * 0.7),
+        new THREE.Vector3(leftHingeX - 0.2, hingeY - 0.4, -templeLength),
     ]);
-    const tipGeom = new THREE.TubeGeometry(tipCurve, 8, frameThickness / 2, 6, false);
+    const leftTempleGeom = new THREE.TubeGeometry(leftTempleCurve, 24, 0.05, 8, false);
+    const leftTemple = new THREE.Mesh(leftTempleGeom, frameMaterial);
+    group.add(leftTemple);
 
-    const leftTip = new THREE.Mesh(tipGeom, frameMaterial);
-    leftTip.position.set(-1.5 - lensWidth / 2 - templeLength, lensHeight / 2 - frameThickness, -0.2);
+    // Left ear tip (curves down behind ear)
+    const leftTipCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(leftHingeX - 0.2, hingeY - 0.4, -templeLength),
+        new THREE.Vector3(leftHingeX - 0.22, hingeY - 0.7, -templeLength - 0.2),
+        new THREE.Vector3(leftHingeX - 0.2, hingeY - 1.0, -templeLength - 0.3),
+    ]);
+    const leftTipGeom = new THREE.TubeGeometry(leftTipCurve, 12, 0.05, 8, false);
+    const leftTip = new THREE.Mesh(leftTipGeom, frameMaterial);
     group.add(leftTip);
 
-    const rightTip = new THREE.Mesh(tipGeom, frameMaterial);
-    rightTip.position.set(1.5 + lensWidth / 2 + templeLength, lensHeight / 2 - frameThickness, -0.2);
-    rightTip.scale.x = -1;
+    // Right temple - mirror of left
+    const rightHingeX = rightLensX + lensWidth / 2 + frameThickness;
+
+    const rightHingeGeom = new THREE.BoxGeometry(0.15, 0.2, 0.15);
+    const rightHinge = new THREE.Mesh(rightHingeGeom, metalMaterial);
+    rightHinge.position.set(rightHingeX, hingeY, 0);
+    group.add(rightHinge);
+
+    const rightTempleCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(rightHingeX, hingeY, -0.05),
+        new THREE.Vector3(rightHingeX + 0.1, hingeY, -templeLength * 0.4),
+        new THREE.Vector3(rightHingeX + 0.15, hingeY - 0.1, -templeLength * 0.7),
+        new THREE.Vector3(rightHingeX + 0.2, hingeY - 0.4, -templeLength),
+    ]);
+    const rightTempleGeom = new THREE.TubeGeometry(rightTempleCurve, 24, 0.05, 8, false);
+    const rightTemple = new THREE.Mesh(rightTempleGeom, frameMaterial);
+    group.add(rightTemple);
+
+    const rightTipCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(rightHingeX + 0.2, hingeY - 0.4, -templeLength),
+        new THREE.Vector3(rightHingeX + 0.22, hingeY - 0.7, -templeLength - 0.2),
+        new THREE.Vector3(rightHingeX + 0.2, hingeY - 1.0, -templeLength - 0.3),
+    ]);
+    const rightTipGeom = new THREE.TubeGeometry(rightTipCurve, 12, 0.05, 8, false);
+    const rightTip = new THREE.Mesh(rightTipGeom, frameMaterial);
     group.add(rightTip);
 
     group.visible = false;
