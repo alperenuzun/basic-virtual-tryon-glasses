@@ -280,6 +280,9 @@ function createGlassesModel() {
     const rightTip = new THREE.Mesh(rightTipGeom, frameMaterial);
     group.add(rightTip);
 
+    // Rotate the glasses 180 degrees so the front faces the camera (user sees front of glasses)
+    group.rotation.y = Math.PI;
+
     group.visible = false;
     return group;
 }
