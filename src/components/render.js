@@ -105,8 +105,9 @@ function createGlassesModel() {
     // Outer group for positioning/rotation from face tracking
     const outerGroup = new THREE.Group();
 
-    // Inner group for the actual glasses model - this gets rotated 180 degrees
-    // so the front of glasses faces the user (camera)
+    // Inner group for the actual glasses model
+    // We use 180° Y rotation for visual appearance, but need temples to go
+    // in +Z direction so after rotation they end up at -Z (away from camera)
     const group = new THREE.Group();
 
     // === MATERIALS ===
@@ -229,10 +230,11 @@ function createGlassesModel() {
     group.add(rightFrame);
 
     // === NOSE BRIDGE (connects the two lenses) ===
+    // Bridge goes slightly forward (-Z) for proper depth after rotation
     const bridgeCurve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(leftLensX + lensWidth / 2, 0.1, 0.05),
-        new THREE.Vector3(0, 0.25, 0.15),
-        new THREE.Vector3(rightLensX - lensWidth / 2, 0.1, 0.05)
+        new THREE.Vector3(leftLensX + lensWidth / 2, 0.1, -0.05),
+        new THREE.Vector3(0, 0.25, -0.15),
+        new THREE.Vector3(rightLensX - lensWidth / 2, 0.1, -0.05)
     ]);
     const bridgeGeom = new THREE.TubeGeometry(bridgeCurve, 16, 0.06, 8, false);
     const bridge = new THREE.Mesh(bridgeGeom, frameMaterial);
@@ -242,35 +244,37 @@ function createGlassesModel() {
     const nosePadGeom = new THREE.SphereGeometry(0.1, 12, 12);
 
     const leftPadArm = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(leftLensX + lensWidth / 4, -0.2, 0.05),
-        new THREE.Vector3(leftLensX + lensWidth / 4 + 0.15, -0.35, 0.2)
+        new THREE.Vector3(leftLensX + lensWidth / 4, -0.2, -0.05),
+        new THREE.Vector3(leftLensX + lensWidth / 4 + 0.15, -0.35, -0.2)
     ]);
     const leftPadArmGeom = new THREE.TubeGeometry(leftPadArm, 8, 0.03, 6, false);
     const leftPadArmMesh = new THREE.Mesh(leftPadArmGeom, metalMaterial);
     group.add(leftPadArmMesh);
 
     const leftNosePad = new THREE.Mesh(nosePadGeom, metalMaterial);
-    leftNosePad.position.set(leftLensX + lensWidth / 4 + 0.15, -0.4, 0.25);
+    leftNosePad.position.set(leftLensX + lensWidth / 4 + 0.15, -0.4, -0.25);
     leftNosePad.scale.set(0.8, 1.2, 0.4);
     group.add(leftNosePad);
 
     const rightPadArm = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(rightLensX - lensWidth / 4, -0.2, 0.05),
-        new THREE.Vector3(rightLensX - lensWidth / 4 - 0.15, -0.35, 0.2)
+        new THREE.Vector3(rightLensX - lensWidth / 4, -0.2, -0.05),
+        new THREE.Vector3(rightLensX - lensWidth / 4 - 0.15, -0.35, -0.2)
     ]);
     const rightPadArmGeom = new THREE.TubeGeometry(rightPadArm, 8, 0.03, 6, false);
     const rightPadArmMesh = new THREE.Mesh(rightPadArmGeom, metalMaterial);
     group.add(rightPadArmMesh);
 
     const rightNosePad = new THREE.Mesh(nosePadGeom, metalMaterial);
-    rightNosePad.position.set(rightLensX - lensWidth / 4 - 0.15, -0.4, 0.25);
+    rightNosePad.position.set(rightLensX - lensWidth / 4 - 0.15, -0.4, -0.25);
     rightNosePad.scale.set(0.8, 1.2, 0.4);
     group.add(rightNosePad);
 
-    // === TEMPLES (Arms) - Going BACKWARD towards ears ===
+    // === TEMPLES (Arms) - Going in +Z direction ===
+    // After 180° Y rotation, these will be at -Z (away from camera = behind face)
+    // This is correct for depth occlusion to work properly
     const hingeY = lensHeight / 2 - 0.15;
 
-    // Left temple - starts at left frame edge, goes back in -Z direction
+    // Left temple - starts at left frame edge, goes in +Z direction (will become -Z after rotation)
     const leftHingeX = leftLensX - lensWidth / 2 - frameThickness;
 
     // Hinge connector
@@ -279,12 +283,12 @@ function createGlassesModel() {
     leftHinge.position.set(leftHingeX, hingeY, 0);
     group.add(leftHinge);
 
-    // Temple arm going backward (Z axis)
+    // Temple arm going in +Z direction (becomes -Z after rotation = towards ears)
     const leftTempleCurve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(leftHingeX, hingeY, -0.05),
-        new THREE.Vector3(leftHingeX - 0.1, hingeY, -templeLength * 0.4),
-        new THREE.Vector3(leftHingeX - 0.15, hingeY - 0.1, -templeLength * 0.7),
-        new THREE.Vector3(leftHingeX - 0.2, hingeY - 0.4, -templeLength),
+        new THREE.Vector3(leftHingeX, hingeY, 0.05),
+        new THREE.Vector3(leftHingeX - 0.1, hingeY, templeLength * 0.4),
+        new THREE.Vector3(leftHingeX - 0.15, hingeY - 0.1, templeLength * 0.7),
+        new THREE.Vector3(leftHingeX - 0.2, hingeY - 0.4, templeLength),
     ]);
     const leftTempleGeom = new THREE.TubeGeometry(leftTempleCurve, 24, 0.05, 8, false);
     const leftTemple = new THREE.Mesh(leftTempleGeom, frameMaterial);
@@ -292,9 +296,9 @@ function createGlassesModel() {
 
     // Left ear tip (curves down behind ear)
     const leftTipCurve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(leftHingeX - 0.2, hingeY - 0.4, -templeLength),
-        new THREE.Vector3(leftHingeX - 0.22, hingeY - 0.7, -templeLength - 0.2),
-        new THREE.Vector3(leftHingeX - 0.2, hingeY - 1.0, -templeLength - 0.3),
+        new THREE.Vector3(leftHingeX - 0.2, hingeY - 0.4, templeLength),
+        new THREE.Vector3(leftHingeX - 0.22, hingeY - 0.7, templeLength + 0.2),
+        new THREE.Vector3(leftHingeX - 0.2, hingeY - 1.0, templeLength + 0.3),
     ]);
     const leftTipGeom = new THREE.TubeGeometry(leftTipCurve, 12, 0.05, 8, false);
     const leftTip = new THREE.Mesh(leftTipGeom, frameMaterial);
@@ -309,26 +313,29 @@ function createGlassesModel() {
     group.add(rightHinge);
 
     const rightTempleCurve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(rightHingeX, hingeY, -0.05),
-        new THREE.Vector3(rightHingeX + 0.1, hingeY, -templeLength * 0.4),
-        new THREE.Vector3(rightHingeX + 0.15, hingeY - 0.1, -templeLength * 0.7),
-        new THREE.Vector3(rightHingeX + 0.2, hingeY - 0.4, -templeLength),
+        new THREE.Vector3(rightHingeX, hingeY, 0.05),
+        new THREE.Vector3(rightHingeX + 0.1, hingeY, templeLength * 0.4),
+        new THREE.Vector3(rightHingeX + 0.15, hingeY - 0.1, templeLength * 0.7),
+        new THREE.Vector3(rightHingeX + 0.2, hingeY - 0.4, templeLength),
     ]);
     const rightTempleGeom = new THREE.TubeGeometry(rightTempleCurve, 24, 0.05, 8, false);
     const rightTemple = new THREE.Mesh(rightTempleGeom, frameMaterial);
     group.add(rightTemple);
 
     const rightTipCurve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(rightHingeX + 0.2, hingeY - 0.4, -templeLength),
-        new THREE.Vector3(rightHingeX + 0.22, hingeY - 0.7, -templeLength - 0.2),
-        new THREE.Vector3(rightHingeX + 0.2, hingeY - 1.0, -templeLength - 0.3),
+        new THREE.Vector3(rightHingeX + 0.2, hingeY - 0.4, templeLength),
+        new THREE.Vector3(rightHingeX + 0.22, hingeY - 0.7, templeLength + 0.2),
+        new THREE.Vector3(rightHingeX + 0.2, hingeY - 1.0, templeLength + 0.3),
     ]);
     const rightTipGeom = new THREE.TubeGeometry(rightTipCurve, 12, 0.05, 8, false);
     const rightTip = new THREE.Mesh(rightTipGeom, frameMaterial);
     group.add(rightTip);
 
     // Rotate inner group 180 degrees so the front of glasses faces the camera
-    // This rotation is preserved even when outer group rotation is updated by face tracking
+    // After this rotation:
+    // - Lenses face the camera (correct visual)
+    // - Temples go in -Z direction (away from camera, behind the face)
+    // This is correct for depth-based face occlusion to work properly
     group.rotation.y = Math.PI;
 
     // Add inner group to outer group
@@ -378,10 +385,21 @@ function updateFaceOccluder(landmarks, videoWidth, videoHeight) {
     const rightEyeInner = landmarks[362]; // LANDMARKS.RIGHT_EYE_INNER
     const eyeCenterZ = (leftEyeInner.z + rightEyeInner.z) / 2;
 
-    // Base Z for occluder - positioned BEHIND where glasses lenses sit
-    // Glasses are at: -eyeCenterZ * videoWidth * 0.5 + 50
-    // Occluder base should be behind that to avoid occluding lenses
-    const baseZ = -eyeCenterZ * videoWidth * 0.5 + 35;  // +35 vs glasses +50 = 15 units behind
+    // Calculate glasses Z position for reference
+    // Glasses lenses are at: -eyeCenterZ * videoWidth * 0.5 + 50 (approximately)
+    // Temples extend BEHIND the face (lower Z values, further from camera)
+    //
+    // For proper occlusion:
+    // - Face mesh should be BEHIND lenses (lower Z) - so lenses are always visible
+    // - Face mesh should be IN FRONT OF temples (higher Z than temple tips) - to hide temples
+    //
+    // With corrected glasses model:
+    // - Lenses are at Z ≈ glassesZ (world Z = 50)
+    // - Temple tips are at Z ≈ glassesZ - templeLength*scale (much lower Z)
+    //
+    // We position the face occluder slightly behind the lens plane
+    const glassesZ = -eyeCenterZ * videoWidth * 0.5 + 50;
+    const baseZ = glassesZ - 10;  // 10 units behind lenses
 
     // Update vertex positions from landmarks
     for (let i = 0; i < landmarks.length && i < 468; i++) {
@@ -391,9 +409,10 @@ function updateFaceOccluder(landmarks, videoWidth, videoHeight) {
         const x = -(landmark.x - 0.5) * videoWidth;
         const y = -(landmark.y - 0.5) * videoHeight;
 
-        // Z: Use relative depth from eye center, with reduced scaling to prevent
-        // extreme variations that could put face mesh in front of glasses lenses
-        const relativeZ = (landmark.z - eyeCenterZ) * videoWidth * 0.25;
+        // Z: Use relative depth from eye center
+        // Positive relativeZ (point is behind eye center) = point is further from camera
+        // We scale the depth variations to create a realistic face shape
+        const relativeZ = -(landmark.z - eyeCenterZ) * videoWidth * 0.8;
         const z = baseZ + relativeZ;
 
         positions[i * 3] = x;
