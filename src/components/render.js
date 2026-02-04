@@ -373,6 +373,16 @@ function updateFaceOccluder(landmarks, videoWidth, videoHeight) {
 
     const positions = occluderGeometry.attributes.position.array;
 
+    // Get eye center Z as reference (same as used for glasses positioning)
+    const leftEyeInner = landmarks[133];  // LANDMARKS.LEFT_EYE_INNER
+    const rightEyeInner = landmarks[362]; // LANDMARKS.RIGHT_EYE_INNER
+    const eyeCenterZ = (leftEyeInner.z + rightEyeInner.z) / 2;
+
+    // Base Z for occluder - positioned BEHIND where glasses lenses sit
+    // Glasses are at: -eyeCenterZ * videoWidth * 0.5 + 50
+    // Occluder base should be behind that to avoid occluding lenses
+    const baseZ = -eyeCenterZ * videoWidth * 0.5 + 35;  // +35 vs glasses +50 = 15 units behind
+
     // Update vertex positions from landmarks
     for (let i = 0; i < landmarks.length && i < 468; i++) {
         const landmark = landmarks[i];
@@ -380,7 +390,11 @@ function updateFaceOccluder(landmarks, videoWidth, videoHeight) {
         // Convert normalized coordinates to screen space (matching glasses coordinate system)
         const x = -(landmark.x - 0.5) * videoWidth;
         const y = -(landmark.y - 0.5) * videoHeight;
-        const z = -landmark.z * videoWidth * 0.5 + 30;  // Slightly in front for proper occlusion
+
+        // Z: Use relative depth from eye center, with reduced scaling to prevent
+        // extreme variations that could put face mesh in front of glasses lenses
+        const relativeZ = (landmark.z - eyeCenterZ) * videoWidth * 0.25;
+        const z = baseZ + relativeZ;
 
         positions[i * 3] = x;
         positions[i * 3 + 1] = y;
