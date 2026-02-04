@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader';
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 // ============================================
@@ -11,64 +9,228 @@ let video = null;
 let renderer = null;
 let camera = null;
 let scene = null;
-let glassesObj = null;
-let faceOccluder = null;
+let glassesGroup = null;
 let videoTexture = null;
 let isRunning = false;
 let lastVideoTime = -1;
 
-// Canvas dimensions
-const CANVAS_WIDTH = 640;
-
 // ============================================
-// SMOOTHING SYSTEM - Exponential Moving Average
+// SMOOTHING SYSTEM - One Euro Filter inspired
 // ============================================
 class SmoothingFilter {
-    constructor(factor = 0.3) {
-        this.factor = factor; // Lower = smoother but more latency
-        this.position = new THREE.Vector3();
-        this.rotation = new THREE.Euler();
-        this.scale = new THREE.Vector3(1, 1, 1);
-        this.initialized = false;
+    constructor(smoothingFactor = 0.25) {
+        this.smoothingFactor = smoothingFactor;
+        this.position = null;
+        this.rotation = null;
+        this.scale = null;
     }
 
     update(newPosition, newRotation, newScale) {
-        if (!this.initialized) {
-            this.position.copy(newPosition);
-            this.rotation.copy(newRotation);
-            this.scale.copy(newScale);
-            this.initialized = true;
-            return;
+        if (!this.position) {
+            this.position = newPosition.clone();
+            this.rotation = newRotation.clone();
+            this.scale = newScale.clone();
+            return { position: this.position, rotation: this.rotation, scale: this.scale };
         }
 
-        // Exponential moving average for smooth transitions
-        this.position.lerp(newPosition, this.factor);
+        // Smooth position
+        this.position.lerp(newPosition, this.smoothingFactor);
 
-        // Smooth rotation using spherical interpolation concept
-        this.rotation.x += (newRotation.x - this.rotation.x) * this.factor;
-        this.rotation.y += (newRotation.y - this.rotation.y) * this.factor;
-        this.rotation.z += (newRotation.z - this.rotation.z) * this.factor;
+        // Smooth rotation
+        this.rotation.x += (newRotation.x - this.rotation.x) * this.smoothingFactor;
+        this.rotation.y += (newRotation.y - this.rotation.y) * this.smoothingFactor;
+        this.rotation.z += (newRotation.z - this.rotation.z) * this.smoothingFactor;
 
-        this.scale.lerp(newScale, this.factor);
+        // Smooth scale
+        this.scale.lerp(newScale, this.smoothingFactor);
+
+        return { position: this.position, rotation: this.rotation, scale: this.scale };
     }
 
     reset() {
-        this.initialized = false;
+        this.position = null;
+        this.rotation = null;
+        this.scale = null;
     }
 }
 
-const glassesFilter = new SmoothingFilter(0.4);  // Slightly responsive
-const occluderFilter = new SmoothingFilter(0.4);
+const glassesFilter = new SmoothingFilter(0.35);
 
 // ============================================
-// MEDIAPIPE FACE LANDMARKER INITIALIZATION
+// 3D GLASSES MODEL - Programmatic Creation
+// ============================================
+function createGlassesModel() {
+    const group = new THREE.Group();
+
+    // Materials
+    const frameMaterial = new THREE.MeshPhongMaterial({
+        color: 0x1a1a1a,
+        shininess: 100,
+        specular: 0x444444,
+    });
+
+    const lensMaterial = new THREE.MeshPhongMaterial({
+        color: 0x2a1a0a,
+        transparent: true,
+        opacity: 0.7,
+        shininess: 150,
+        specular: 0x333333,
+        side: THREE.DoubleSide,
+    });
+
+    const metalMaterial = new THREE.MeshPhongMaterial({
+        color: 0xcccccc,
+        shininess: 200,
+        specular: 0xffffff,
+    });
+
+    // Dimensions (in scene units, calibrated for face)
+    const lensWidth = 2.4;
+    const lensHeight = 1.8;
+    const lensDepth = 0.15;
+    const bridgeWidth = 0.8;
+    const frameThickness = 0.12;
+    const templeLength = 4.5;
+
+    // === LEFT LENS ===
+    const leftLensGeom = new THREE.BoxGeometry(lensWidth, lensHeight, lensDepth);
+    // Round the corners using edge beveling
+    const leftLens = new THREE.Mesh(leftLensGeom, lensMaterial);
+    leftLens.position.set(-1.5, 0, 0);
+    group.add(leftLens);
+
+    // Left lens frame (border)
+    const leftFrameShape = new THREE.Shape();
+    const fw = lensWidth / 2 + frameThickness;
+    const fh = lensHeight / 2 + frameThickness;
+    leftFrameShape.moveTo(-fw, -fh);
+    leftFrameShape.lineTo(fw, -fh);
+    leftFrameShape.lineTo(fw, fh);
+    leftFrameShape.lineTo(-fw, fh);
+    leftFrameShape.lineTo(-fw, -fh);
+
+    // Hole for lens
+    const leftHole = new THREE.Path();
+    const hw = lensWidth / 2;
+    const hh = lensHeight / 2;
+    leftHole.moveTo(-hw, -hh);
+    leftHole.lineTo(hw, -hh);
+    leftHole.lineTo(hw, hh);
+    leftHole.lineTo(-hw, hh);
+    leftHole.lineTo(-hw, -hh);
+    leftFrameShape.holes.push(leftHole);
+
+    const leftFrameGeom = new THREE.ExtrudeGeometry(leftFrameShape, {
+        depth: lensDepth + 0.05,
+        bevelEnabled: false
+    });
+    const leftFrame = new THREE.Mesh(leftFrameGeom, frameMaterial);
+    leftFrame.position.set(-1.5, 0, -lensDepth / 2 - 0.025);
+    group.add(leftFrame);
+
+    // === RIGHT LENS ===
+    const rightLensGeom = new THREE.BoxGeometry(lensWidth, lensHeight, lensDepth);
+    const rightLens = new THREE.Mesh(rightLensGeom, lensMaterial);
+    rightLens.position.set(1.5, 0, 0);
+    group.add(rightLens);
+
+    // Right lens frame
+    const rightFrameShape = new THREE.Shape();
+    rightFrameShape.moveTo(-fw, -fh);
+    rightFrameShape.lineTo(fw, -fh);
+    rightFrameShape.lineTo(fw, fh);
+    rightFrameShape.lineTo(-fw, fh);
+    rightFrameShape.lineTo(-fw, -fh);
+
+    const rightHole = new THREE.Path();
+    rightHole.moveTo(-hw, -hh);
+    rightHole.lineTo(hw, -hh);
+    rightHole.lineTo(hw, hh);
+    rightHole.lineTo(-hw, hh);
+    rightHole.lineTo(-hw, -hh);
+    rightFrameShape.holes.push(rightHole);
+
+    const rightFrameGeom = new THREE.ExtrudeGeometry(rightFrameShape, {
+        depth: lensDepth + 0.05,
+        bevelEnabled: false
+    });
+    const rightFrame = new THREE.Mesh(rightFrameGeom, frameMaterial);
+    rightFrame.position.set(1.5, 0, -lensDepth / 2 - 0.025);
+    group.add(rightFrame);
+
+    // === NOSE BRIDGE ===
+    const bridgeGeom = new THREE.BoxGeometry(bridgeWidth, frameThickness * 2, lensDepth);
+    const bridge = new THREE.Mesh(bridgeGeom, frameMaterial);
+    bridge.position.set(0, 0.2, 0);
+    group.add(bridge);
+
+    // === NOSE PADS ===
+    const nosePadGeom = new THREE.SphereGeometry(0.12, 8, 8);
+    const leftNosePad = new THREE.Mesh(nosePadGeom, metalMaterial);
+    leftNosePad.position.set(-0.35, -0.4, 0.15);
+    leftNosePad.scale.set(1, 1.5, 0.5);
+    group.add(leftNosePad);
+
+    const rightNosePad = new THREE.Mesh(nosePadGeom, metalMaterial);
+    rightNosePad.position.set(0.35, -0.4, 0.15);
+    rightNosePad.scale.set(1, 1.5, 0.5);
+    group.add(rightNosePad);
+
+    // === TEMPLES (Arms) ===
+    // Left temple
+    const leftTempleGeom = new THREE.BoxGeometry(templeLength, frameThickness, frameThickness);
+    const leftTemple = new THREE.Mesh(leftTempleGeom, frameMaterial);
+    leftTemple.position.set(-1.5 - lensWidth / 2 - templeLength / 2, lensHeight / 2 - frameThickness, -0.2);
+    group.add(leftTemple);
+
+    // Left temple hinge
+    const leftHingeGeom = new THREE.BoxGeometry(0.2, frameThickness * 2, frameThickness * 2);
+    const leftHinge = new THREE.Mesh(leftHingeGeom, metalMaterial);
+    leftHinge.position.set(-1.5 - lensWidth / 2 - 0.1, lensHeight / 2 - frameThickness, -0.1);
+    group.add(leftHinge);
+
+    // Right temple
+    const rightTempleGeom = new THREE.BoxGeometry(templeLength, frameThickness, frameThickness);
+    const rightTemple = new THREE.Mesh(rightTempleGeom, frameMaterial);
+    rightTemple.position.set(1.5 + lensWidth / 2 + templeLength / 2, lensHeight / 2 - frameThickness, -0.2);
+    group.add(rightTemple);
+
+    // Right temple hinge
+    const rightHingeGeom = new THREE.BoxGeometry(0.2, frameThickness * 2, frameThickness * 2);
+    const rightHinge = new THREE.Mesh(rightHingeGeom, metalMaterial);
+    rightHinge.position.set(1.5 + lensWidth / 2 + 0.1, lensHeight / 2 - frameThickness, -0.1);
+    group.add(rightHinge);
+
+    // Temple tips (ear hooks)
+    const tipCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(-0.1, -0.2, 0.1),
+        new THREE.Vector3(-0.15, -0.5, 0.15),
+    ]);
+    const tipGeom = new THREE.TubeGeometry(tipCurve, 8, frameThickness / 2, 6, false);
+
+    const leftTip = new THREE.Mesh(tipGeom, frameMaterial);
+    leftTip.position.set(-1.5 - lensWidth / 2 - templeLength, lensHeight / 2 - frameThickness, -0.2);
+    group.add(leftTip);
+
+    const rightTip = new THREE.Mesh(tipGeom, frameMaterial);
+    rightTip.position.set(1.5 + lensWidth / 2 + templeLength, lensHeight / 2 - frameThickness, -0.2);
+    rightTip.scale.x = -1;
+    group.add(rightTip);
+
+    group.visible = false;
+    return group;
+}
+
+// ============================================
+// MEDIAPIPE FACE LANDMARKER
 // ============================================
 export async function initializeFaceLandmarker(onProgress) {
     try {
         onProgress?.('Loading AI model...');
 
         const vision = await FilesetResolver.forVisionTasks(
-            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm'
         );
 
         faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
@@ -97,124 +259,6 @@ export async function initializeFaceLandmarker(onProgress) {
 // ============================================
 // THREE.JS SCENE SETUP
 // ============================================
-function createVideoBackground() {
-    videoTexture = new THREE.VideoTexture(video);
-    videoTexture.minFilter = THREE.LinearFilter;
-    videoTexture.magFilter = THREE.LinearFilter;
-    videoTexture.format = THREE.RGBAFormat;
-
-    const videoMaterial = new THREE.SpriteMaterial({
-        map: videoTexture,
-        depthWrite: false,
-        depthTest: false
-    });
-
-    const videoSprite = new THREE.Sprite(videoMaterial);
-    videoSprite.center.set(0.5, 0.5);
-    videoSprite.scale.set(-video.videoWidth, video.videoHeight, 1);
-    videoSprite.position.copy(camera.position);
-    videoSprite.position.z = 0;
-    videoSprite.renderOrder = -1;
-
-    scene.add(videoSprite);
-}
-
-function createLighting() {
-    // Main light - positioned to simulate natural lighting
-    const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    mainLight.position.set(0, 100, 100);
-    scene.add(mainLight);
-
-    // Fill light - softer, from the side
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    fillLight.position.set(-100, 50, 50);
-    scene.add(fillLight);
-
-    // Ambient light - overall scene illumination
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-}
-
-function createFaceOccluder() {
-    return new Promise((resolve) => {
-        const loader = new OBJLoader();
-        loader.load(
-            process.env.PUBLIC_URL + '/obj/facemesh.obj',
-            (obj) => {
-                obj.traverse((child) => {
-                    if (child instanceof THREE.Mesh) {
-                        faceOccluder = new THREE.Mesh(
-                            child.geometry,
-                            new THREE.MeshBasicMaterial({
-                                colorWrite: false,
-                                side: THREE.DoubleSide
-                            })
-                        );
-                        faceOccluder.renderOrder = 1;
-                        faceOccluder.visible = false;
-                        scene.add(faceOccluder);
-                    }
-                });
-                resolve();
-            },
-            undefined,
-            (error) => {
-                console.warn('Face occluder not loaded:', error);
-                resolve();
-            }
-        );
-    });
-}
-
-function loadGlassesModel(modelName, onProgress) {
-    return new Promise((resolve, reject) => {
-        onProgress?.('Loading 3D glasses model...');
-
-        const mtlLoader = new MTLLoader();
-        mtlLoader.setMaterialOptions({ side: THREE.DoubleSide });
-
-        mtlLoader.load(
-            process.env.PUBLIC_URL + '/obj/' + modelName + '.mtl',
-            (materials) => {
-                materials.preload();
-
-                const objLoader = new OBJLoader();
-                objLoader.setMaterials(materials);
-
-                objLoader.load(
-                    process.env.PUBLIC_URL + '/obj/' + modelName + '.obj',
-                    (obj) => {
-                        glassesObj = obj;
-                        glassesObj.name = modelName;
-                        glassesObj.renderOrder = 2;
-                        glassesObj.visible = false;
-
-                        // Optimize materials
-                        glassesObj.traverse((child) => {
-                            if (child instanceof THREE.Mesh) {
-                                if (child.material) {
-                                    child.material.needsUpdate = true;
-                                }
-                            }
-                        });
-
-                        scene.add(glassesObj);
-                        onProgress?.('3D model loaded');
-                        resolve();
-                    },
-                    undefined,
-                    reject
-                );
-            },
-            undefined,
-            reject
-        );
-    });
-}
-
-// ============================================
-// MAIN INITIALIZATION
-// ============================================
 export async function initializeScene(modelName, onProgress) {
     video = document.getElementById('tryon-video');
     const container = document.getElementById('threejsContainer');
@@ -223,13 +267,56 @@ export async function initializeScene(modelName, onProgress) {
         throw new Error('Required DOM elements not found');
     }
 
-    // Setup camera
-    const aspectRatio = video.videoWidth / video.videoHeight;
-    camera = new THREE.PerspectiveCamera(50, aspectRatio, 1, 5000);
-    camera.position.set(-video.videoWidth / 2, -video.videoHeight / 2, video.videoHeight);
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+
+    // Setup orthographic camera for 2D overlay style
+    const aspect = videoWidth / videoHeight;
+    const frustumSize = videoHeight;
+    camera = new THREE.OrthographicCamera(
+        -frustumSize * aspect / 2,
+        frustumSize * aspect / 2,
+        frustumSize / 2,
+        -frustumSize / 2,
+        0.1,
+        2000
+    );
+    camera.position.z = 500;
 
     // Create scene
     scene = new THREE.Scene();
+
+    // Video background
+    videoTexture = new THREE.VideoTexture(video);
+    videoTexture.minFilter = THREE.LinearFilter;
+    videoTexture.magFilter = THREE.LinearFilter;
+
+    const videoGeometry = new THREE.PlaneGeometry(videoWidth, videoHeight);
+    const videoMaterial = new THREE.MeshBasicMaterial({
+        map: videoTexture,
+        side: THREE.FrontSide
+    });
+    const videoMesh = new THREE.Mesh(videoGeometry, videoMaterial);
+    videoMesh.scale.x = -1; // Mirror the video
+    videoMesh.position.z = -100;
+    scene.add(videoMesh);
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(0, 1, 1);
+    scene.add(directionalLight);
+
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    fillLight.position.set(0, -1, 0.5);
+    scene.add(fillLight);
+
+    // Create glasses
+    onProgress?.('Creating 3D glasses...');
+    glassesGroup = createGlassesModel();
+    scene.add(glassesGroup);
 
     // Setup renderer
     renderer = new THREE.WebGLRenderer({
@@ -237,47 +324,24 @@ export async function initializeScene(modelName, onProgress) {
         alpha: true,
         powerPreference: 'high-performance'
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit for performance
-    renderer.setSize(CANVAS_WIDTH, CANVAS_WIDTH * video.videoHeight / video.videoWidth);
-    renderer.sortObjects = true;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(videoWidth, videoHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    // Clear existing canvas if any
+    // Clear existing canvas
     const existingCanvas = container.querySelector('canvas');
     if (existingCanvas) {
         container.removeChild(existingCanvas);
     }
     container.appendChild(renderer.domElement);
 
-    // Build scene
-    createVideoBackground();
-    createLighting();
-
-    // Load models in parallel
-    await Promise.all([
-        createFaceOccluder(),
-        loadGlassesModel(modelName, onProgress)
-    ]);
-
     // Start render loop
     animate();
 
-    // Handle window resize
-    window.addEventListener('resize', handleResize);
-
+    onProgress?.('Ready');
     return true;
 }
 
-function handleResize() {
-    if (!camera || !renderer || !video) return;
-
-    camera.aspect = video.videoWidth / video.videoHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(CANVAS_WIDTH, CANVAS_WIDTH * video.videoHeight / video.videoWidth);
-}
-
-// ============================================
-// RENDER LOOP
-// ============================================
 function animate() {
     if (!renderer || !scene || !camera) return;
 
@@ -290,111 +354,93 @@ function animate() {
 }
 
 // ============================================
-// FACE TRACKING & GLASSES POSITIONING
+// FACE LANDMARK INDICES
 // ============================================
-
-// Key MediaPipe Face Landmark indices for glasses positioning
 const LANDMARKS = {
-    // Eye corners for width calculation
+    // Eye corners
     LEFT_EYE_OUTER: 33,
     LEFT_EYE_INNER: 133,
     RIGHT_EYE_INNER: 362,
     RIGHT_EYE_OUTER: 263,
 
-    // Nose bridge for center positioning
-    NOSE_BRIDGE_TOP: 6,
-    NOSE_BRIDGE_MID: 168,
+    // Nose
+    NOSE_TIP: 1,
+    NOSE_BRIDGE: 6,
 
-    // Forehead and chin for face orientation
+    // Face bounds
     FOREHEAD: 10,
     CHIN: 152,
-
-    // Cheekbones for face width
     LEFT_CHEEK: 234,
     RIGHT_CHEEK: 454,
 
-    // For rotation calculation
-    LEFT_EAR: 234,
-    RIGHT_EAR: 454
+    // For better rotation
+    LEFT_EYE_TOP: 159,
+    RIGHT_EYE_TOP: 386,
 };
 
+// ============================================
+// GLASSES POSITIONING
+// ============================================
 function calculateGlassesTransform(landmarks, videoWidth, videoHeight) {
-    // Get key landmark positions
+    // Get landmarks
     const leftEyeOuter = landmarks[LANDMARKS.LEFT_EYE_OUTER];
-    const rightEyeOuter = landmarks[LANDMARKS.RIGHT_EYE_OUTER];
     const leftEyeInner = landmarks[LANDMARKS.LEFT_EYE_INNER];
     const rightEyeInner = landmarks[LANDMARKS.RIGHT_EYE_INNER];
-    const noseBridge = landmarks[LANDMARKS.NOSE_BRIDGE_TOP];
+    const rightEyeOuter = landmarks[LANDMARKS.RIGHT_EYE_OUTER];
     const forehead = landmarks[LANDMARKS.FOREHEAD];
     const chin = landmarks[LANDMARKS.CHIN];
     const leftCheek = landmarks[LANDMARKS.LEFT_CHEEK];
     const rightCheek = landmarks[LANDMARKS.RIGHT_CHEEK];
 
-    // Calculate center position between eyes (glasses bridge position)
-    const centerX = (leftEyeInner.x + rightEyeInner.x) / 2;
-    const centerZ = (leftEyeInner.z + rightEyeInner.z) / 2;
+    // Calculate eye center (where glasses bridge sits)
+    const eyeCenterX = (leftEyeInner.x + rightEyeInner.x) / 2;
+    const eyeCenterY = (leftEyeInner.y + rightEyeInner.y) / 2;
+    const eyeCenterZ = (leftEyeInner.z + rightEyeInner.z) / 2;
 
-    // Convert to Three.js coordinate system
-    const posX = -(centerX * videoWidth);
-    const posY = -(noseBridge.y * videoHeight) + 15; // Slight offset up for bridge
-    const posZ = -(centerZ * videoWidth) - 170; // Depth adjustment
+    // Convert normalized coords to screen space (centered at origin)
+    // Note: Video is mirrored, so we negate X
+    const posX = -(eyeCenterX - 0.5) * videoWidth;
+    const posY = -(eyeCenterY - 0.5) * videoHeight;
+    const posZ = -eyeCenterZ * videoWidth * 0.5 + 50; // Bring forward
 
-    // Calculate scale based on face width (distance between eye corners)
-    const eyeDistance = Math.sqrt(
+    // Calculate face width for scaling
+    const faceWidth = Math.sqrt(
         Math.pow((rightEyeOuter.x - leftEyeOuter.x) * videoWidth, 2) +
-        Math.pow((rightEyeOuter.y - leftEyeOuter.y) * videoHeight, 2) +
-        Math.pow((rightEyeOuter.z - leftEyeOuter.z) * videoWidth, 2)
+        Math.pow((rightEyeOuter.y - leftEyeOuter.y) * videoHeight, 2)
     );
 
-    // Calculate scale factor (calibrated for the glasses model)
-    const scaleFactor = eyeDistance / 115; // Adjusted divisor for proper fit
+    // Scale glasses to fit face (base glasses width is ~6 units)
+    const baseGlassesWidth = 6;
+    const targetWidth = faceWidth * 1.15; // Slightly wider than eye distance
+    const scale = targetWidth / baseGlassesWidth;
 
-    // Calculate rotation angles
-
-    // Yaw (Y-axis rotation) - head turning left/right
-    const yaw = Math.atan2(
-        rightCheek.z - leftCheek.z,
-        rightCheek.x - leftCheek.x
-    );
-
-    // Pitch (X-axis rotation) - head tilting up/down
-    const pitch = Math.atan2(
-        forehead.z - chin.z,
-        forehead.y - chin.y
-    ) - Math.PI / 2;
-
-    // Roll (Z-axis rotation) - head tilting sideways
+    // Calculate rotations
+    // Roll (Z-axis) - head tilt
     const roll = Math.atan2(
-        rightEyeOuter.y - leftEyeOuter.y,
-        rightEyeOuter.x - leftEyeOuter.x
+        (rightEyeOuter.y - leftEyeOuter.y) * videoHeight,
+        (rightEyeOuter.x - leftEyeOuter.x) * videoWidth
     );
+
+    // Yaw (Y-axis) - head turn left/right
+    const yaw = Math.asin(
+        Math.max(-1, Math.min(1, (rightCheek.z - leftCheek.z) * 2))
+    );
+
+    // Pitch (X-axis) - head tilt up/down
+    const faceVertical = (forehead.y - chin.y) * videoHeight;
+    const faceDepth = (forehead.z - chin.z) * videoWidth;
+    const pitch = Math.atan2(faceDepth, faceVertical);
 
     return {
         position: new THREE.Vector3(posX, posY, posZ),
-        rotation: new THREE.Euler(
-            -pitch * 0.8,           // Pitch with dampening
-            yaw - Math.PI / 2,      // Yaw adjustment
-            roll,                    // Roll
-            'YXZ'                   // Rotation order
-        ),
-        scale: new THREE.Vector3(
-            scaleFactor,
-            scaleFactor,
-            scaleFactor * 1.2       // Slightly more depth
-        )
+        rotation: new THREE.Euler(-pitch * 0.5, yaw, -roll, 'YXZ'),
+        scale: new THREE.Vector3(scale, scale, scale)
     };
 }
 
-function applyTransformWithSmoothing(object, transform, filter) {
-    if (!object) return;
-
-    filter.update(transform.position, transform.rotation, transform.scale);
-
-    object.position.copy(filter.position);
-    object.rotation.copy(filter.rotation);
-    object.scale.copy(filter.scale);
-}
-
+// ============================================
+// TRACKING LOOP
+// ============================================
 export function startTracking() {
     if (isRunning) return;
     isRunning = true;
@@ -404,13 +450,11 @@ export function startTracking() {
 export function stopTracking() {
     isRunning = false;
     glassesFilter.reset();
-    occluderFilter.reset();
 }
 
 async function trackFace() {
     if (!isRunning || !faceLandmarker || !video) return;
 
-    // Only process if we have a new video frame
     const currentTime = video.currentTime;
     if (currentTime !== lastVideoTime && video.readyState >= 2) {
         lastVideoTime = currentTime;
@@ -421,36 +465,30 @@ async function trackFace() {
             if (results.faceLandmarks && results.faceLandmarks.length > 0) {
                 const landmarks = results.faceLandmarks[0];
 
-                // Calculate glasses transform
-                const transform = calculateGlassesTransform(
+                const rawTransform = calculateGlassesTransform(
                     landmarks,
                     video.videoWidth,
                     video.videoHeight
                 );
 
-                // Apply with smoothing
-                if (glassesObj) {
-                    glassesObj.visible = true;
-                    applyTransformWithSmoothing(glassesObj, transform, glassesFilter);
-                }
+                // Apply smoothing
+                const smoothed = glassesFilter.update(
+                    rawTransform.position,
+                    rawTransform.rotation,
+                    rawTransform.scale
+                );
 
-                // Apply to face occluder with slight offset
-                if (faceOccluder) {
-                    faceOccluder.visible = true;
-                    const occluderTransform = {
-                        position: transform.position.clone().add(new THREE.Vector3(0, -10, 30)),
-                        rotation: transform.rotation.clone(),
-                        scale: transform.scale.clone().multiplyScalar(1.05)
-                    };
-                    applyTransformWithSmoothing(faceOccluder, occluderTransform, occluderFilter);
+                if (glassesGroup) {
+                    glassesGroup.visible = true;
+                    glassesGroup.position.copy(smoothed.position);
+                    glassesGroup.rotation.copy(smoothed.rotation);
+                    glassesGroup.scale.copy(smoothed.scale);
                 }
             } else {
-                // No face detected - hide objects
-                if (glassesObj) glassesObj.visible = false;
-                if (faceOccluder) faceOccluder.visible = false;
+                if (glassesGroup) glassesGroup.visible = false;
             }
         } catch (error) {
-            console.error('Face tracking error:', error);
+            console.error('Tracking error:', error);
         }
     }
 
@@ -487,14 +525,9 @@ export function cleanup() {
         faceLandmarker = null;
     }
 
-    window.removeEventListener('resize', handleResize);
-
     glassesFilter.reset();
-    occluderFilter.reset();
-
     camera = null;
-    glassesObj = null;
-    faceOccluder = null;
+    glassesGroup = null;
     videoTexture = null;
     video = null;
     lastVideoTime = -1;
