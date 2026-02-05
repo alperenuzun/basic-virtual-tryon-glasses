@@ -12,7 +12,6 @@ import JeelizThreeHelper from '../helpers/JeelizThreeHelper';
 // ============================================
 let threeCamera = null;
 let glassesObj = null;
-let occluderMesh = null;
 let isInitialized = false;
 
 // ============================================
@@ -128,11 +127,8 @@ export async function initialize(canvasId, onProgress) {
                     glassesObj = createGlasses(envMapTexture);
                     threeStuff.faceObject.add(glassesObj);
 
-                    // Create face occluder for realistic depth
-                    occluderMesh = JeelizThreeHelper.create_threejsOccluder(MODEL_PATHS.occluder, (loadedOccluder) => {
-                        console.log('Face occluder loaded');
-                    });
-                    threeStuff.faceObject.add(occluderMesh);
+                    // Note: Face occluder disabled for now due to geometry format issues
+                    // TODO: Fix occluder JSON format for Three.js r160 compatibility
 
                     isInitialized = true;
                     onProgress?.('Ready');
@@ -142,9 +138,6 @@ export async function initialize(canvasId, onProgress) {
                     // Continue without env map
                     glassesObj = createGlasses(null);
                     threeStuff.faceObject.add(glassesObj);
-
-                    occluderMesh = JeelizThreeHelper.create_threejsOccluder(MODEL_PATHS.occluder);
-                    threeStuff.faceObject.add(occluderMesh);
 
                     isInitialized = true;
                     onProgress?.('Ready');
@@ -170,7 +163,6 @@ export function cleanup() {
     }
     threeCamera = null;
     glassesObj = null;
-    occluderMesh = null;
 }
 
 // ============================================
