@@ -31,39 +31,23 @@ const MODEL_PATHS = {
 function createGlasses(envMapTexture) {
     const glassesGroup = new THREE.Object3D();
 
-    // Load frames
+    // Load frames with simple material (avoid complex shader issues)
     new THREE.BufferGeometryLoader().load(MODEL_PATHS.frames, (geometry) => {
         geometry.computeVertexNormals();
 
-        // Custom material with fading at temple tips
-        let vertexShader = "varying float vPosZ;\n" + THREE.ShaderLib.standard.vertexShader;
-        vertexShader = vertexShader.replace('#include <fog_vertex>', 'vPosZ = position.z;');
-
-        let fragmentShader = "uniform vec2 uBranchFading;\nvarying float vPosZ;\n" + THREE.ShaderLib.standard.fragmentShader;
-        fragmentShader = fragmentShader.replace(
-            '#include <fog_fragment>',
-            'gl_FragColor.a = smoothstep(uBranchFading.x - uBranchFading.y*0.5, uBranchFading.x + uBranchFading.y*0.5, vPosZ);'
-        );
-
-        const frameMaterial = new THREE.ShaderMaterial({
-            vertexShader,
-            fragmentShader,
-            uniforms: {
-                roughness: { value: 0.2 },
-                metalness: { value: 0.8 },
-                reflectivity: { value: 0.8 },
-                envMap: { value: envMapTexture },
-                envMapIntensity: { value: 1 },
-                diffuse: { value: new THREE.Color(0x1a1a1a) },
-                uBranchFading: { value: new THREE.Vector2(-90, 60) }
-            },
-            transparent: true,
-            flatShading: false
+        // Use MeshStandardMaterial for reliable rendering
+        const frameMaterial = new THREE.MeshStandardMaterial({
+            color: 0x1a1a1a,
+            roughness: 0.3,
+            metalness: 0.8,
+            envMap: envMapTexture,
+            envMapIntensity: 1.0
         });
-        frameMaterial.envMap = envMapTexture;
 
         const framesMesh = new THREE.Mesh(geometry, frameMaterial);
         glassesGroup.add(framesMesh);
+    }, undefined, (error) => {
+        console.error('Error loading frames:', error);
     });
 
     // Load lenses
@@ -71,15 +55,17 @@ function createGlasses(envMapTexture) {
         geometry.computeVertexNormals();
 
         const lensMaterial = new THREE.MeshBasicMaterial({
+            color: 0x442211,
             envMap: envMapTexture,
             opacity: 0.6,
-            color: new THREE.Color(0x442211),
             transparent: true,
-            fog: false
+            reflectivity: 0.8
         });
 
         const lensesMesh = new THREE.Mesh(geometry, lensMaterial);
         glassesGroup.add(lensesMesh);
+    }, undefined, (error) => {
+        console.error('Error loading lenses:', error);
     });
 
     return glassesGroup;
