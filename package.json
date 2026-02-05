@@ -4,7 +4,7 @@
   "private": true,
   "homepage": "https://alperenuzun.github.io/basic-virtual-tryon-glasses",
   "dependencies": {
-    "@mediapipe/tasks-vision": "^0.10.8",
+    "facefilter": "^3.4.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",

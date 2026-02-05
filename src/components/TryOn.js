@@ -1,20 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import '../style/TryOn.style.css';
 
-import {
-    initializeFaceLandmarker,
-    initializeScene,
-    startTracking,
-    stopTracking,
-    cleanup
-} from './render.js';
+import { initialize, cleanup, resize } from './render.js';
 
 // Loading states
 const LoadingState = {
     IDLE: 'idle',
-    REQUESTING_CAMERA: 'requesting_camera',
-    LOADING_AI: 'loading_ai',
-    LOADING_MODEL: 'loading_model',
+    INITIALIZING: 'initializing',
     READY: 'ready',
     ERROR: 'error'
 };
@@ -23,9 +15,8 @@ export const TryOn = () => {
     const [loadingState, setLoadingState] = useState(LoadingState.IDLE);
     const [loadingMessage, setLoadingMessage] = useState('');
     const [error, setError] = useState(null);
-    const videoRef = useRef(null);
-    const streamRef = useRef(null);
     const isInitializedRef = useRef(false);
+    const canvasRef = useRef(null);
 
     const handleProgress = useCallback((message) => {
         setLoadingMessage(message);
@@ -35,56 +26,15 @@ export const TryOn = () => {
         if (isInitializedRef.current) return;
         isInitializedRef.current = true;
 
-        const video = videoRef.current;
-        if (!video) {
-            setError('Video element not found');
-            setLoadingState(LoadingState.ERROR);
-            return;
-        }
-
         try {
-            // Step 1: Request camera access
-            setLoadingState(LoadingState.REQUESTING_CAMERA);
-            setLoadingMessage('Requesting camera access...');
+            setLoadingState(LoadingState.INITIALIZING);
+            setLoadingMessage('Starting...');
 
-            const stream = await navigator.mediaDevices.getUserMedia({
-                audio: false,
-                video: {
-                    facingMode: 'user',
-                    width: { ideal: 640 },
-                    height: { ideal: 480 },
-                    frameRate: { ideal: 30 }
-                }
-            });
+            // Initialize Jeeliz FaceFilter (handles webcam internally)
+            await initialize('tryon-canvas', handleProgress);
 
-            streamRef.current = stream;
-            video.srcObject = stream;
-
-            // Wait for video to be ready
-            await new Promise((resolve, reject) => {
-                video.onloadedmetadata = () => {
-                    video.play()
-                        .then(resolve)
-                        .catch(reject);
-                };
-                video.onerror = reject;
-            });
-
-            // Step 2: Initialize MediaPipe Face Landmarker
-            setLoadingState(LoadingState.LOADING_AI);
-            const aiSuccess = await initializeFaceLandmarker(handleProgress);
-            if (!aiSuccess) {
-                throw new Error('Failed to load AI model');
-            }
-
-            // Step 3: Initialize Three.js scene and load 3D model
-            setLoadingState(LoadingState.LOADING_MODEL);
-            await initializeScene('purple1', handleProgress);
-
-            // Step 4: Start face tracking
             setLoadingState(LoadingState.READY);
             setLoadingMessage('');
-            startTracking();
 
         } catch (err) {
             console.error('Initialization error:', err);
@@ -96,34 +46,21 @@ export const TryOn = () => {
     useEffect(() => {
         initializeApp();
 
+        // Handle window resize
+        const handleResize = () => {
+            resize();
+        };
+        window.addEventListener('resize', handleResize);
+
         return () => {
             // Cleanup on unmount
-            stopTracking();
             cleanup();
-
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-                streamRef.current = null;
-            }
-
+            window.removeEventListener('resize', handleResize);
             isInitializedRef.current = false;
         };
     }, [initializeApp]);
 
-    const getLoadingText = () => {
-        switch (loadingState) {
-            case LoadingState.REQUESTING_CAMERA:
-                return 'Requesting camera access...';
-            case LoadingState.LOADING_AI:
-                return loadingMessage || 'Loading AI model...';
-            case LoadingState.LOADING_MODEL:
-                return loadingMessage || 'Loading 3D glasses...';
-            default:
-                return loadingMessage || 'Loading...';
-        }
-    };
-
-    const isLoading = loadingState !== LoadingState.READY && loadingState !== LoadingState.ERROR;
+    const isLoading = loadingState === LoadingState.INITIALIZING || loadingState === LoadingState.IDLE;
 
     return (
         <div className="tryon-container">
@@ -132,7 +69,7 @@ export const TryOn = () => {
                 <div className="loading-overlay">
                     <div className="loading-content">
                         <div className="loading-spinner"></div>
-                        <p className="loading-text">{getLoadingText()}</p>
+                        <p className="loading-text">{loadingMessage || 'Loading...'}</p>
                     </div>
                 </div>
             )}
@@ -141,7 +78,7 @@ export const TryOn = () => {
             {loadingState === LoadingState.ERROR && (
                 <div className="error-overlay">
                     <div className="error-content">
-                        <div className="error-icon">⚠️</div>
+                        <div className="error-icon">!</div>
                         <h2>Something went wrong</h2>
                         <p>{error}</p>
                         <button
@@ -154,15 +91,12 @@ export const TryOn = () => {
                 </div>
             )}
 
-            {/* Main Content */}
-            <div id="threejsContainer" className={isLoading ? 'hidden' : ''}>
-                <video
-                    id="tryon-video"
-                    ref={videoRef}
-                    playsInline
-                    muted
-                />
-            </div>
+            {/* Canvas for Jeeliz FaceFilter */}
+            <canvas
+                id="tryon-canvas"
+                ref={canvasRef}
+                className={isLoading ? 'hidden' : ''}
+            />
 
             {/* Instructions */}
             {loadingState === LoadingState.READY && (

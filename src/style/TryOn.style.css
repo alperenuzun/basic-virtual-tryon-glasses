@@ -1,5 +1,5 @@
 /* ============================================
-   VIRTUAL TRY-ON GLASSES - PROFESSIONAL STYLES
+   VIRTUAL TRY-ON GLASSES - JEELIZ STYLES
    ============================================ */
 
 /* Container */
@@ -15,12 +15,9 @@
     overflow: hidden;
 }
 
-/* Three.js Container */
-#threejsContainer {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* Canvas Element - Jeeliz renders directly to this */
+#tryon-canvas {
+    display: block;
     border-radius: 16px;
     overflow: hidden;
     box-shadow:
@@ -28,25 +25,13 @@
         0 0 0 1px rgba(255, 255, 255, 0.1);
     background: #000;
     transition: opacity 0.3s ease, transform 0.3s ease;
+    max-width: 90vw;
+    max-height: 80vh;
 }
 
-#threejsContainer.hidden {
+#tryon-canvas.hidden {
     opacity: 0;
     transform: scale(0.95);
-}
-
-#threejsContainer canvas {
-    display: block;
-    max-width: 100%;
-    height: auto;
-    border-radius: 16px;
-}
-
-/* Hidden video element */
-#tryon-video {
-    display: none;
-    width: 640px;
-    height: 480px;
 }
 
 /* ============================================
@@ -121,8 +106,17 @@
 }
 
 .error-icon {
-    font-size: 64px;
-    margin-bottom: 20px;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 20px;
+    border: 3px solid #e94560;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    font-weight: bold;
+    color: #e94560;
 }
 
 .error-content h2 {
@@ -197,16 +191,9 @@
         padding: 20px;
     }
 
-    #threejsContainer {
+    #tryon-canvas {
         border-radius: 12px;
-        width: 100%;
         max-width: 100%;
-    }
-
-    #threejsContainer canvas {
-        width: 100% !important;
-        height: auto !important;
-        border-radius: 12px;
     }
 
     .loading-spinner {
@@ -232,7 +219,9 @@
     }
 
     .error-icon {
-        font-size: 48px;
+        width: 48px;
+        height: 48px;
+        font-size: 24px;
     }
 
     .error-content h2 {
@@ -272,7 +261,7 @@
     }
 }
 
-#threejsContainer:not(.hidden) {
+#tryon-canvas:not(.hidden) {
     animation: fadeIn 0.5s ease-out;
 }
 
