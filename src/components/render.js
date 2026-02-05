@@ -94,7 +94,7 @@ export async function initialize(canvasId, onProgress) {
 
         JEELIZFACEFILTER.init({
             canvasId: canvasId,
-            NNCPath: NN_DEFAULT,
+            NNC: NN_DEFAULT,  // Neural network data (not path)
             maxFacesDetected: 1,
             followZRot: true,
 

@@ -1,6 +1,8 @@
 /*
   Helper for Three.js
+  Based on Jeeliz FaceFilter helper
 */
+/* eslint-disable no-multi-str, no-unused-vars */
 
 import * as THREE from 'three';
 import { JEELIZFACEFILTER } from 'facefilter';
