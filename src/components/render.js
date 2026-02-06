@@ -1,10 +1,9 @@
 import * as THREE from 'three';
-import {OBJLoader} from 'three/examples/jsm/loaders/OBJLoader';
 
 // ── State ──────────────────────────────────────────────────────────────────────
 var faceLandmarker;
 var glassesObj;
-var faceObj;
+var headOccluder;
 var bg;
 var video;
 let renderer;
@@ -31,18 +30,19 @@ const LM = {
     noseTip: 1
 };
 
-// ── Calibration Metrics ────────────────────────────────────────────────────────
-const MODEL_METRICS = {
+// ── Calibration Config ───────────────────────────────────────────────────────
+const CONFIG = {
+    glassesDepthOffset: 12,
+    glassesVerticalOffset: 2,
+    glassesCenterX: 0,
+    occluderDepthOffset: -0.4,
+    occluderScaleX: 0.55,
+    occluderScaleY: 0.52,
+    occluderScaleZ: 0.45,
+    occluderVerticalOffset: -5,
     referenceHeadWidth: 140,
     referenceFaceHeight: 210,
-    glassesDepth: 18,
-    glassesDown: 4,
-    glassesCenterX: 0,
-    faceDepth: -4,
-    glassesScaleMultiplier: 1.0,
-    glassesModelWidth: 130,
-    faceScaleBoost: 1.06,
-    faceDepthBoost: 0.95
+    glassesScaleMultiplier: 1.05
 };
 
 // ── Smoothing State ────────────────────────────────────────────────────────────
@@ -51,9 +51,9 @@ const smoothing = {
     glassesPos: new THREE.Vector3(),
     glassesQuat: new THREE.Quaternion(),
     glassesScale: new THREE.Vector3(1, 1, 1),
-    facePos: new THREE.Vector3(),
-    faceQuat: new THREE.Quaternion(),
-    faceScale: new THREE.Vector3(1, 1, 1),
+    occluderPos: new THREE.Vector3(),
+    occluderQuat: new THREE.Quaternion(),
+    occluderScale: new THREE.Vector3(1, 1, 1),
     prevTargetPos: new THREE.Vector3()
 };
 
@@ -89,7 +89,7 @@ function computeNormal(v1, v2, v3) {
     return e1.cross(e2).normalize();
 }
 
-// ── Procedural Glasses Model ───────────────────────────────────────────────────
+// ── Procedural Sunglasses Model ──────────────────────────────────────────────
 
 function createRoundedRectShape(w, h, r, offsetY) {
     offsetY = offsetY || 0;
@@ -131,7 +131,7 @@ function createRoundedRectPath(w, h, r, offsetY) {
     return path;
 }
 
-function createWayfarerGlasses() {
+function createSunglasses() {
     var glasses = new THREE.Group();
 
     // ── Dimensions (model units ≈ mm) ──
@@ -151,18 +151,18 @@ function createWayfarerGlasses() {
 
     // ── Materials ──
     var frameMat = new THREE.MeshStandardMaterial({
-        color: 0x111122,
-        metalness: 0.2,
-        roughness: 0.28,
+        color: 0x0a0a12,
+        metalness: 0.25,
+        roughness: 0.25,
         side: THREE.FrontSide
     });
 
     var lensMat = new THREE.MeshStandardMaterial({
-        color: 0x556677,
-        metalness: 0.15,
-        roughness: 0.02,
+        color: 0x222222,
+        metalness: 0.1,
+        roughness: 0.05,
         transparent: true,
-        opacity: 0.22,
+        opacity: 0.55,
         side: THREE.DoubleSide,
         depthWrite: false
     });
@@ -219,25 +219,26 @@ function createWayfarerGlasses() {
     var bridge = new THREE.Mesh(bridgeGeo, frameMat);
     bridge.position.set(0, lensH * 0.18 + vertOff, 0);
 
-    // ── Temple Arms ──
+    // ── Temple Arms (extending in -Z direction = behind the head) ──
     var templeGeo = new THREE.BoxBufferGeometry(templeW, templeH, templeLen);
 
     var templeOuterX = lensCenterX + outerW / 2 - frameSideThick / 2;
+    var ty = lensH * 0.18 + vertOff;
 
     var leftTemple = new THREE.Mesh(templeGeo, frameMat);
-    leftTemple.position.set(-templeOuterX, lensH * 0.18 + vertOff, templeLen / 2);
+    leftTemple.position.set(-templeOuterX, ty, -(frameDepth / 2 + templeLen / 2));
 
     var rightTemple = new THREE.Mesh(templeGeo.clone(), frameMat);
-    rightTemple.position.set(templeOuterX, lensH * 0.18 + vertOff, templeLen / 2);
+    rightTemple.position.set(templeOuterX, ty, -(frameDepth / 2 + templeLen / 2));
 
     // ── Temple End Curves (ear hooks) ──
     var hookGeo = new THREE.BoxBufferGeometry(templeW, templeH * 2, templeH * 3);
 
     var leftHook = new THREE.Mesh(hookGeo, frameMat);
-    leftHook.position.set(-templeOuterX, lensH * 0.18 + vertOff - templeH, templeLen + templeH);
+    leftHook.position.set(-templeOuterX, ty - templeH, -(frameDepth / 2 + templeLen + templeH));
 
     var rightHook = new THREE.Mesh(hookGeo.clone(), frameMat);
-    rightHook.position.set(templeOuterX, lensH * 0.18 + vertOff - templeH, templeLen + templeH);
+    rightHook.position.set(templeOuterX, ty - templeH, -(frameDepth / 2 + templeLen + templeH));
 
     // ── Nose Pads ──
     var nosePadGeo = new THREE.SphereBufferGeometry(2.5, 8, 6);
@@ -266,18 +267,28 @@ function createWayfarerGlasses() {
     return glasses;
 }
 
+// ── Head Occluder ────────────────────────────────────────────────────────────
+
+function createHeadOccluder() {
+    var geo = new THREE.SphereBufferGeometry(1, 20, 16);
+    var mat = new THREE.MeshBasicMaterial({
+        colorWrite: false,
+        side: THREE.FrontSide
+    });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 1;
+    return mesh;
+}
+
 // ── Scene Setup ────────────────────────────────────────────────────────────────
 
 function setVideoContent() {
-    // Compute exact FOV to match video dimensions
     var vw = video.videoWidth;
     var vh = video.videoHeight;
-    var fov = 2 * Math.atan(0.5) * (180 / Math.PI); // ~53.13°
 
-    camera = new THREE.PerspectiveCamera(fov, vw / vh, 1, 5000);
-    camera.position.z = vh;
-    camera.position.x = -vw / 2;
-    camera.position.y = -vh / 2;
+    // OrthographicCamera eliminates perspective distortion at edges
+    camera = new THREE.OrthographicCamera(-vw / 2, vw / 2, vh / 2, -vh / 2, 0.1, 5000);
+    camera.position.set(-vw / 2, -vh / 2, 500);
 
     bg = new THREE.Texture(video);
     bg.minFilter = THREE.LinearFilter;
@@ -297,43 +308,20 @@ function setVideoContent() {
 }
 
 function setTheLights() {
-    // Key light - main illumination from front-above
     var keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
     keyLight.position.set(0, 100, 150);
     scene.add(keyLight);
 
-    // Fill light - soften shadows from the side
     var fillLight = new THREE.DirectionalLight(0xeeeeff, 0.45);
     fillLight.position.set(-80, 30, 100);
     scene.add(fillLight);
 
-    // Rim light - subtle edge highlight
     var rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
     rimLight.position.set(60, 60, -80);
     scene.add(rimLight);
 
-    // Ambient - overall soft illumination
     var ambientLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
     scene.add(ambientLight);
-}
-
-function getFaceMask() {
-    new OBJLoader().load(process.env.PUBLIC_URL + '/obj/facemesh.obj', function(obj) {
-        obj.traverse(function(child) {
-            if (child instanceof THREE.Mesh) {
-                faceObj = new THREE.Mesh(
-                    child.geometry,
-                    new THREE.MeshLambertMaterial({
-                        side: THREE.FrontSide,
-                        color: 0x0000ff,
-                        colorWrite: false
-                    })
-                );
-                faceObj.renderOrder = 5;
-                scene.add(faceObj);
-            }
-        });
-    });
 }
 
 // ── Initialization ─────────────────────────────────────────────────────────────
@@ -345,10 +333,13 @@ export function IntializeThreejs(objName) {
     setVideoContent();
     setTheLights();
 
-    getFaceMask();
+    // Create head occluder (replaces facemesh.obj)
+    headOccluder = createHeadOccluder();
+    headOccluder.visible = false;
+    scene.add(headOccluder);
 
-    // Create procedural wayfarer glasses
-    glassesObj = createWayfarerGlasses();
+    // Create procedural sunglasses
+    glassesObj = createSunglasses();
     glassesObj.visible = false;
     scene.add(glassesObj);
 
@@ -370,9 +361,14 @@ export function IntializeThreejs(objName) {
 }
 
 function onWindowResize() {
-    camera.aspect = video.videoWidth / video.videoHeight;
+    var vw = video.videoWidth;
+    var vh = video.videoHeight;
+    camera.left = -vw / 2;
+    camera.right = vw / 2;
+    camera.top = vh / 2;
+    camera.bottom = -vh / 2;
     camera.updateProjectionMatrix();
-    renderer.setSize(windowWidth, windowWidth * video.videoHeight / video.videoWidth);
+    renderer.setSize(windowWidth, windowWidth * vh / vw);
 }
 
 function animate() {
@@ -399,7 +395,7 @@ export async function IntializeEngine() {
         runningMode: 'VIDEO',
         numFaces: 1,
         outputFaceBlendshapes: false,
-        outputFacialTransformationMatrixes: true
+        outputFacialTransformationMatrixes: false
     });
     scheduleNextPrediction();
 }
@@ -435,7 +431,7 @@ function renderPrediction() {
 
     if (results.faceLandmarks && results.faceLandmarks.length > 0 && glassesObj) {
         glassesObj.visible = true;
-        if (faceObj) faceObj.visible = true;
+        if (headOccluder) headOccluder.visible = true;
 
         var points = lmToPixels(results.faceLandmarks[0]);
 
@@ -460,12 +456,12 @@ function renderPrediction() {
         var faceWidth = Math.max(eyeWidth, templeWidth, cheekWidth);
         var faceHeight = forehead.distanceTo(chin);
 
-        // ── Orientation from Landmarks ──
+        // ── Orientation from Landmarks Only ──
         var xAxis = rightEye.clone().sub(leftEye).normalize();
         var yAxisRaw = forehead.clone().sub(chin).normalize();
         var zAxis = xAxis.clone().cross(yAxisRaw).normalize();
 
-        // Ensure zAxis points toward camera (positive z in scene ≈ toward camera)
+        // Ensure zAxis points toward camera
         var faceNormal = computeNormal(
             toVec(points, LM.leftEyeOuter),
             toVec(points, LM.rightEyeOuter),
@@ -478,72 +474,41 @@ function renderPrediction() {
         // Recompute yAxis for perfect orthogonality
         var yAxis = zAxis.clone().cross(xAxis).normalize();
 
-        // ── Use Transformation Matrix for Rotation (if available) ──
-        var targetQuat;
-        if (results.facialTransformationMatrixes &&
-            results.facialTransformationMatrixes.length > 0) {
-            var matData = results.facialTransformationMatrixes[0].data;
-            // MediaPipe provides row-major 4x4 matrix
-            // Convert to Three.js Matrix4 (column-major)
-            var m = new THREE.Matrix4();
-            m.set(
-                matData[0], matData[1], matData[2], matData[3],
-                matData[4], matData[5], matData[6], matData[7],
-                matData[8], matData[9], matData[10], matData[11],
-                matData[12], matData[13], matData[14], matData[15]
-            );
-
-            // Extract rotation
-            var mpQuat = new THREE.Quaternion();
-            var mpPos = new THREE.Vector3();
-            var mpScale = new THREE.Vector3();
-            m.decompose(mpPos, mpQuat, mpScale);
-
-            // Convert from MediaPipe coords (X-right, Y-down, Z-forward)
-            // to scene coords (X-neg-right, Y-neg-down, Z-neg-forward)
-            // and apply mirror for the mirrored video display.
-            // Mirror X-axis rotation: negate y and z components of quaternion
-            targetQuat = new THREE.Quaternion(
-                mpQuat.x,
-                -mpQuat.y,
-                -mpQuat.z,
-                mpQuat.w
-            );
-        } else {
-            // Fallback: compute from landmarks
-            var rotMat = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
-            targetQuat = new THREE.Quaternion().setFromRotationMatrix(rotMat);
-        }
+        // Build rotation from landmark basis
+        var rotMat = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+        var targetQuat = new THREE.Quaternion().setFromRotationMatrix(rotMat);
 
         // ── Position ──
         var bridgeToTip = noseTip.clone().sub(noseBridge);
         var depthAdjust = clamp(bridgeToTip.length() * 0.1, 0, 6);
 
         var targetGlassesPos = eyeMid.clone()
-            .addScaledVector(xAxis, MODEL_METRICS.glassesCenterX)
-            .addScaledVector(yAxis, MODEL_METRICS.glassesDown)
-            .addScaledVector(zAxis, MODEL_METRICS.glassesDepth + depthAdjust);
+            .addScaledVector(xAxis, CONFIG.glassesCenterX)
+            .addScaledVector(yAxis, CONFIG.glassesVerticalOffset)
+            .addScaledVector(zAxis, CONFIG.glassesDepthOffset + depthAdjust);
 
-        var targetFacePos = noseBridge.clone()
-            .addScaledVector(zAxis, MODEL_METRICS.faceDepth);
+        // ── Occluder Position ──
+        var targetOccluderPos = eyeMid.clone()
+            .addScaledVector(yAxis, CONFIG.occluderVerticalOffset)
+            .addScaledVector(zAxis, faceWidth * CONFIG.occluderDepthOffset);
+
+        var targetOccluderScale = new THREE.Vector3(
+            faceWidth * CONFIG.occluderScaleX,
+            faceHeight * CONFIG.occluderScaleY,
+            faceWidth * CONFIG.occluderScaleZ
+        );
 
         // ── Scale ──
-        var widthScale = faceWidth / MODEL_METRICS.referenceHeadWidth;
-        var heightScale = faceHeight / MODEL_METRICS.referenceFaceHeight;
+        var widthScale = faceWidth / CONFIG.referenceHeadWidth;
+        var heightScale = faceHeight / CONFIG.referenceFaceHeight;
         var baseScale = (widthScale * 0.7) + (heightScale * 0.3);
 
-        var glassesScale = baseScale * MODEL_METRICS.glassesScaleMultiplier;
-        var faceScale = baseScale * MODEL_METRICS.faceScaleBoost;
+        var glassesScale = baseScale * CONFIG.glassesScaleMultiplier;
 
         var targetGlassesScale = new THREE.Vector3(
             glassesScale,
             glassesScale,
             glassesScale
-        );
-        var targetFaceScale = new THREE.Vector3(
-            faceScale,
-            faceScale,
-            faceScale * MODEL_METRICS.faceDepthBoost
         );
 
         // ── Adaptive Smoothing ──
@@ -558,38 +523,39 @@ function renderPrediction() {
             smoothing.glassesPos.copy(targetGlassesPos);
             smoothing.glassesQuat.copy(targetQuat);
             smoothing.glassesScale.copy(targetGlassesScale);
-            smoothing.facePos.copy(targetFacePos);
-            smoothing.faceQuat.copy(targetQuat);
-            smoothing.faceScale.copy(targetFaceScale);
+            smoothing.occluderPos.copy(targetOccluderPos);
+            smoothing.occluderQuat.copy(targetQuat);
+            smoothing.occluderScale.copy(targetOccluderScale);
             smoothing.ready = true;
         } else {
             smoothing.glassesPos.lerp(targetGlassesPos, alphaPos);
             smoothing.glassesQuat.slerp(targetQuat, alphaRot);
             smoothing.glassesScale.lerp(targetGlassesScale, alphaScale);
 
-            smoothing.facePos.lerp(targetFacePos, alphaPos);
-            smoothing.faceQuat.slerp(targetQuat, alphaRot);
-            smoothing.faceScale.lerp(targetFaceScale, alphaScale);
+            smoothing.occluderPos.lerp(targetOccluderPos, alphaPos);
+            smoothing.occluderQuat.slerp(targetQuat, alphaRot);
+            smoothing.occluderScale.lerp(targetOccluderScale, alphaScale);
         }
 
         smoothing.prevTargetPos.copy(targetGlassesPos);
 
-        // ── Apply to Objects ──
+        // ── Apply to Glasses ──
         glassesObj.position.copy(smoothing.glassesPos);
         glassesObj.quaternion.copy(smoothing.glassesQuat);
         glassesObj.scale.copy(smoothing.glassesScale);
         glassesObj.updateWorldMatrix(true, true);
 
-        if (faceObj) {
-            faceObj.position.copy(smoothing.facePos);
-            faceObj.quaternion.copy(smoothing.faceQuat);
-            faceObj.scale.copy(smoothing.faceScale);
-            faceObj.updateWorldMatrix(true, true);
+        // ── Apply to Head Occluder ──
+        if (headOccluder) {
+            headOccluder.position.copy(smoothing.occluderPos);
+            headOccluder.quaternion.copy(smoothing.occluderQuat);
+            headOccluder.scale.copy(smoothing.occluderScale);
+            headOccluder.updateWorldMatrix(true, true);
         }
 
     } else {
         if (glassesObj) glassesObj.visible = false;
-        if (faceObj) faceObj.visible = false;
+        if (headOccluder) headOccluder.visible = false;
         smoothing.ready = false;
     }
 
