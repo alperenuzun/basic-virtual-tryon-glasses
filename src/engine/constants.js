@@ -37,5 +37,5 @@ export const CFG = {
     glassesDepth: 10,       // Z-offset: how far glasses sit in front of the face
     glassesDown: 2,         // Y-offset: push glasses slightly downward
     glassesCenterX: 0,      // X-offset: horizontal fine-tuning
-    glassesScale: 1.05      // Overall scale multiplier
+    glassesScale: 1.22      // Overall scale multiplier
 };

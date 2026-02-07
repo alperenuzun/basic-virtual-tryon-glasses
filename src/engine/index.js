@@ -55,9 +55,20 @@ export function initializeThreejs(objName) {
     var bgResult = createVideoBackground(video, camera);
     bg = bgResult.bg;
 
+    // Renderer (created early so PMREMGenerator can use it)
+    renderer = createRenderer(video);
+    container.appendChild(renderer.domElement);
+
     // Scene
     scene = new THREE.Scene();
     scene.add(bgResult.sprite);
+
+    // Environment map for realistic reflections on clearcoat / metallic surfaces
+    var pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileCubemapShader();
+    var neutralEnv = pmrem.fromScene(new THREE.Scene()).texture;
+    scene.environment = neutralEnv;
+    pmrem.dispose();
 
     // Lights
     createLights().forEach(function(light) { scene.add(light); });
@@ -71,10 +82,6 @@ export function initializeThreejs(objName) {
     glassesObj = createSunglasses();
     glassesObj.visible = false;
     scene.add(glassesObj);
-
-    // Renderer
-    renderer = createRenderer(video);
-    container.appendChild(renderer.domElement);
 
     window.addEventListener('resize', function() {
         handleResize(camera, renderer, video);
@@ -204,9 +211,9 @@ function renderPrediction() {
         var mov = tGPos.distanceTo(sm.prev);
         var aDelta = qDelta(sm.gQuat, targetQuat);
 
-        var aP = clamp(0.12 + mov * 0.012, 0.12, 0.5);
-        var aR = clamp(0.12 + aDelta * 0.4, 0.12, 0.55);
-        var aS = clamp(0.14 + mov * 0.008, 0.14, 0.4);
+        var aP = clamp(0.15 + mov * 0.015, 0.15, 0.55);
+        var aR = clamp(0.20 + aDelta * 0.6, 0.20, 0.75);
+        var aS = clamp(0.16 + mov * 0.010, 0.16, 0.45);
 
         if (!sm.ready) {
             sm.gPos.copy(tGPos);
