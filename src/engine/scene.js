@@ -36,20 +36,28 @@ export function createVideoBackground(video, camera) {
     return { bg, sprite };
 }
 
-/** Create the scene lighting (key, fill, rim, ambient). */
+/** Create the scene lighting (key, fill, rim, accent, ambient). */
 export function createLights() {
-    var key = new THREE.DirectionalLight(0xffffff, 1.1);
-    key.position.set(0, 100, 200);
+    // Key light — main illumination from upper front
+    var key = new THREE.DirectionalLight(0xffffff, 1.2);
+    key.position.set(0, 120, 250);
 
-    var fill = new THREE.DirectionalLight(0xeeeeff, 0.45);
-    fill.position.set(-80, 30, 100);
+    // Fill light — softer, from left side to reduce harsh shadows
+    var fill = new THREE.DirectionalLight(0xeef0ff, 0.5);
+    fill.position.set(-100, 40, 120);
 
-    var rim = new THREE.DirectionalLight(0xffffff, 0.3);
-    rim.position.set(60, 60, -80);
+    // Rim light — back-lighting for edge highlights on frame
+    var rim = new THREE.DirectionalLight(0xffffff, 0.4);
+    rim.position.set(60, 80, -100);
 
-    var amb = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
+    // Top accent — helps clearcoat reflections on brow line
+    var topAccent = new THREE.DirectionalLight(0xffffff, 0.25);
+    topAccent.position.set(0, 200, 50);
 
-    return [key, fill, rim, amb];
+    // Ambient — hemisphere for natural outdoor feel
+    var amb = new THREE.HemisphereLight(0xffffff, 0x444466, 0.5);
+
+    return [key, fill, rim, topAccent, amb];
 }
 
 /** Create the WebGL renderer with production-quality settings. */
