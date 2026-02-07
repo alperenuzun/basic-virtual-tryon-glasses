@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import '../style/TryOn.style.css';
-import { IntializeEngine, IntializeThreejs } from './render.js';
+import { initializeEngine, initializeThreejs } from '../engine';
 
 export const TryOn = () => {
     const [isLoading, setIsLoading] = useState(true);
@@ -21,8 +21,8 @@ export const TryOn = () => {
 
             video.oncanplay = () => {
                 video.play();
-                IntializeThreejs("glasses_premium.gltf");
-                IntializeEngine();
+                initializeThreejs("glasses_premium.gltf");
+                initializeEngine();
                 setIsLoading(false);
             };
         }
