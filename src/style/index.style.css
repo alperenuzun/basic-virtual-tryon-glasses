@@ -8,8 +8,9 @@ html, body {
 }
 
 body {
-
-    background-color: #ffffff;
+    background-color: #09090f;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 .container {

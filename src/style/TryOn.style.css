@@ -1,21 +1,211 @@
+/* ── Hidden video source ─────────────────────────────────────────────────────── */
 #tryon-video {
-  display: none;
-  width: 640px;
-  height: 480px;
-}
-#threejsContainer{
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-#threejsContainer canvas {
-  width: 640px;
-  height: 480px;
-  object-fit: cover;
+    display: none;
+    width: 640px;
+    height: 480px;
 }
 
 .videosource {
-  display: none;
+    display: none;
+}
+
+/* ── Page layout ─────────────────────────────────────────────────────────────── */
+.tryon-page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #09090f;
+    font-family: 'Inter', 'Work Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #ffffff;
+    padding: 32px 24px;
+    gap: 24px;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────────── */
+.tryon-header {
+    text-align: center;
+}
+
+.tryon-title {
+    font-size: 32px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #ffffff 0%, #8888a0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.tryon-subtitle {
+    font-size: 13px;
+    color: #555568;
+    margin: 8px 0 0;
+    font-weight: 400;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+/* ── Viewport (canvas container) ─────────────────────────────────────────────── */
+.tryon-viewport {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.06),
+        0 8px 40px rgba(0, 0, 0, 0.5);
+    background: #111118;
+}
+
+#threejsContainer {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#threejsContainer canvas {
+    width: 640px;
+    height: 480px;
+    display: block;
+    object-fit: cover;
+}
+
+/* ── Loading overlay ─────────────────────────────────────────────────────────── */
+.tryon-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #111118;
+    z-index: 10;
+    gap: 16px;
+}
+
+.tryon-loading p {
+    font-size: 13px;
+    color: #555568;
+    margin: 0;
+    letter-spacing: 0.5px;
+}
+
+.tryon-spinner {
+    width: 28px;
+    height: 28px;
+    border: 2.5px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.7);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ── Controls ────────────────────────────────────────────────────────────────── */
+.tryon-controls {
+    display: flex;
+    gap: 12px;
+}
+
+.tryon-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 22px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #ccccdd;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.tryon-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+}
+
+.tryon-btn:active {
+    transform: scale(0.97);
+}
+
+.tryon-btn svg {
+    flex-shrink: 0;
+}
+
+/* Record button active state */
+.tryon-btn-record.recording {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.35);
+    color: #ef4444;
+}
+
+.tryon-btn-record.recording:hover {
+    background: rgba(239, 68, 68, 0.22);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+@keyframes pulse-record {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.25); }
+    50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+
+.tryon-btn-record.recording {
+    animation: pulse-record 1.8s ease infinite;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────────── */
+.tryon-footer {
+    font-size: 11px;
+    color: #333344;
+    margin: 0;
+    letter-spacing: 0.5px;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+    .tryon-page {
+        padding: 20px 0;
+        gap: 20px;
+    }
+
+    .tryon-viewport {
+        border-radius: 0;
+        width: 100%;
+        box-shadow: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    #threejsContainer canvas {
+        width: 100vw;
+        height: calc(100vw * 0.75);
+    }
+
+    .tryon-title {
+        font-size: 24px;
+    }
+
+    .tryon-subtitle {
+        font-size: 11px;
+    }
+
+    .tryon-controls {
+        padding: 0 20px;
+    }
+
+    .tryon-btn {
+        flex: 1;
+        justify-content: center;
+    }
 }

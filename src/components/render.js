@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // ── State ──────────────────────────────────────────────────────────────────────
 var faceLandmarker;
 var glassesObj;
-var headOccluder;
+var faceObj; // dynamic face mesh occluder
 var bg;
 var video;
 let renderer;
@@ -30,126 +30,99 @@ const LM = {
     noseTip: 1
 };
 
-// ── Calibration Config ───────────────────────────────────────────────────────
-const CONFIG = {
-    glassesDepthOffset: 12,
-    glassesVerticalOffset: 2,
+// Face oval contour (36 landmarks tracing the face outline)
+const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
+
+// ── Calibration ────────────────────────────────────────────────────────────────
+const CFG = {
+    refHeadWidth: 140,
+    refFaceHeight: 210,
+    glassesDepth: 10,
+    glassesDown: 2,
     glassesCenterX: 0,
-    occluderDepthOffset: -0.4,
-    occluderScaleX: 0.55,
-    occluderScaleY: 0.52,
-    occluderScaleZ: 0.45,
-    occluderVerticalOffset: -5,
-    referenceHeadWidth: 140,
-    referenceFaceHeight: 210,
-    glassesScaleMultiplier: 1.05
+    glassesScale: 1.05
 };
 
 // ── Smoothing State ────────────────────────────────────────────────────────────
-const smoothing = {
+const sm = {
     ready: false,
-    glassesPos: new THREE.Vector3(),
-    glassesQuat: new THREE.Quaternion(),
-    glassesScale: new THREE.Vector3(1, 1, 1),
-    occluderPos: new THREE.Vector3(),
-    occluderQuat: new THREE.Quaternion(),
-    occluderScale: new THREE.Vector3(1, 1, 1),
-    prevTargetPos: new THREE.Vector3()
+    gPos: new THREE.Vector3(),
+    gQuat: new THREE.Quaternion(),
+    gScale: new THREE.Vector3(1, 1, 1),
+    prev: new THREE.Vector3()
 };
 
-// ── Helper Functions ───────────────────────────────────────────────────────────
-function clamp(v, lo, hi) {
-    return Math.max(lo, Math.min(hi, v));
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function toV(pts, i) {
+    return new THREE.Vector3(-pts[i][0], -pts[i][1], -pts[i][2]);
 }
 
-function toVec(points, idx) {
-    return new THREE.Vector3(-points[idx][0], -points[idx][1], -points[idx][2]);
+function mid(a, b) { return a.clone().add(b).multiplyScalar(0.5); }
+
+function eyeMid(pts, inner, outer) {
+    return mid(toV(pts, inner), toV(pts, outer));
 }
 
-function mid(a, b) {
-    return a.clone().add(b).multiplyScalar(0.5);
-}
-
-function eyeCenter(points, inner, outer) {
-    return mid(toVec(points, inner), toVec(points, outer));
-}
-
-function quatDelta(a, b) {
+function qDelta(a, b) {
     return 2 * Math.acos(clamp(Math.abs(a.dot(b)), 0, 1));
 }
 
-function lmToPixels(landmarks) {
-    const w = video.videoWidth, h = video.videoHeight;
-    return landmarks.map(l => [l.x * w, l.y * h, l.z * w]);
+function toPixels(landmarks) {
+    var w = video.videoWidth, h = video.videoHeight;
+    return landmarks.map(function(l) { return [l.x * w, l.y * h, l.z * w]; });
 }
 
-function computeNormal(v1, v2, v3) {
-    const e1 = v2.clone().sub(v1);
-    const e2 = v3.clone().sub(v1);
-    return e1.cross(e2).normalize();
-}
-
-// ── Procedural Sunglasses Model ──────────────────────────────────────────────
-
-function createRoundedRectShape(w, h, r, offsetY) {
-    offsetY = offsetY || 0;
-    var shape = new THREE.Shape();
+// ── Rounded Rect Helpers ───────────────────────────────────────────────────────
+function rrShape(w, h, r, oy) {
+    oy = oy || 0;
+    var s = new THREE.Shape();
     var x0 = -w / 2, x1 = w / 2;
-    var y0 = -h / 2 + offsetY, y1 = h / 2 + offsetY;
+    var y0 = -h / 2 + oy, y1 = h / 2 + oy;
     r = Math.min(r, w / 2, h / 2);
-
-    shape.moveTo(x0 + r, y0);
-    shape.lineTo(x1 - r, y0);
-    shape.quadraticCurveTo(x1, y0, x1, y0 + r);
-    shape.lineTo(x1, y1 - r);
-    shape.quadraticCurveTo(x1, y1, x1 - r, y1);
-    shape.lineTo(x0 + r, y1);
-    shape.quadraticCurveTo(x0, y1, x0, y1 - r);
-    shape.lineTo(x0, y0 + r);
-    shape.quadraticCurveTo(x0, y0, x0 + r, y0);
-
-    return shape;
+    s.moveTo(x0 + r, y0);
+    s.lineTo(x1 - r, y0);
+    s.quadraticCurveTo(x1, y0, x1, y0 + r);
+    s.lineTo(x1, y1 - r);
+    s.quadraticCurveTo(x1, y1, x1 - r, y1);
+    s.lineTo(x0 + r, y1);
+    s.quadraticCurveTo(x0, y1, x0, y1 - r);
+    s.lineTo(x0, y0 + r);
+    s.quadraticCurveTo(x0, y0, x0 + r, y0);
+    return s;
 }
 
-function createRoundedRectPath(w, h, r, offsetY) {
-    offsetY = offsetY || 0;
-    var path = new THREE.Path();
+function rrPath(w, h, r, oy) {
+    oy = oy || 0;
+    var p = new THREE.Path();
     var x0 = -w / 2, x1 = w / 2;
-    var y0 = -h / 2 + offsetY, y1 = h / 2 + offsetY;
+    var y0 = -h / 2 + oy, y1 = h / 2 + oy;
     r = Math.min(r, w / 2, h / 2);
-
-    path.moveTo(x0 + r, y0);
-    path.lineTo(x1 - r, y0);
-    path.quadraticCurveTo(x1, y0, x1, y0 + r);
-    path.lineTo(x1, y1 - r);
-    path.quadraticCurveTo(x1, y1, x1 - r, y1);
-    path.lineTo(x0 + r, y1);
-    path.quadraticCurveTo(x0, y1, x0, y1 - r);
-    path.lineTo(x0, y0 + r);
-    path.quadraticCurveTo(x0, y0, x0 + r, y0);
-
-    return path;
+    p.moveTo(x0 + r, y0);
+    p.lineTo(x1 - r, y0);
+    p.quadraticCurveTo(x1, y0, x1, y0 + r);
+    p.lineTo(x1, y1 - r);
+    p.quadraticCurveTo(x1, y1, x1 - r, y1);
+    p.lineTo(x0 + r, y1);
+    p.quadraticCurveTo(x0, y1, x0, y1 - r);
+    p.lineTo(x0, y0 + r);
+    p.quadraticCurveTo(x0, y0, x0 + r, y0);
+    return p;
 }
 
+// ── Sunglasses Model ───────────────────────────────────────────────────────────
 function createSunglasses() {
-    var glasses = new THREE.Group();
+    var g = new THREE.Group();
 
-    // ── Dimensions (model units ≈ mm) ──
-    var lensW = 48;
-    var lensH = 32;
-    var frameTopThick = 7;
-    var frameBotThick = 3;
-    var frameSideThick = 4;
-    var bridgeW = 16;
-    var frameDepth = 6;
-    var templeLen = 120;
-    var templeW = 4.5;
-    var templeH = 3;
+    // Dimensions (model units ~ mm)
+    var lensW = 58, lensH = 34;
+    var ftTop = 8, ftBot = 3, ftSide = 4;
+    var bridgeW = 14, fd = 6;
+    var tLen = 50, tW = 4.5, tH = 3;
+    var lensR = 5, frameR = 6;
 
-    var lensCornerR = 4;
-    var frameCornerR = 5;
-
-    // ── Materials ──
+    // Materials
     var frameMat = new THREE.MeshStandardMaterial({
         color: 0x0a0a12,
         metalness: 0.25,
@@ -158,136 +131,142 @@ function createSunglasses() {
     });
 
     var lensMat = new THREE.MeshStandardMaterial({
-        color: 0x222222,
+        color: 0x1a1a1a,
         metalness: 0.1,
         roughness: 0.05,
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.6,
         side: THREE.DoubleSide,
         depthWrite: false
     });
 
-    var nosePadMat = new THREE.MeshStandardMaterial({
-        color: 0xcccccc,
-        metalness: 0.0,
-        roughness: 0.6,
-        transparent: true,
-        opacity: 0.5
-    });
+    // Frame outer shape with lens hole
+    var oW = lensW + ftSide * 2;
+    var oH = lensH + ftTop + ftBot;
+    var vOff = (ftTop - ftBot) / 2;
 
-    // ── Frame Shape (single lens frame with hole for lens) ──
-    var outerW = lensW + frameSideThick * 2;
-    var outerH = lensH + frameTopThick + frameBotThick;
-    var vertOff = (frameTopThick - frameBotThick) / 2;
+    var outer = rrShape(oW, oH, frameR, vOff);
+    outer.holes.push(rrPath(lensW, lensH, lensR));
 
-    var outerShape = createRoundedRectShape(outerW, outerH, frameCornerR, vertOff);
-    var lensHole = createRoundedRectPath(lensW, lensH, lensCornerR);
-    outerShape.holes.push(lensHole);
-
-    var extrudeOpts = {
-        depth: frameDepth,
+    var extOpts = {
+        depth: fd,
         bevelEnabled: true,
-        bevelThickness: 0.7,
-        bevelSize: 0.5,
+        bevelThickness: 0.8,
+        bevelSize: 0.6,
         bevelSegments: 2
     };
 
-    var frameGeom = new THREE.ExtrudeBufferGeometry(outerShape, extrudeOpts);
-    frameGeom.computeVertexNormals();
+    var fGeom = new THREE.ExtrudeBufferGeometry(outer, extOpts);
+    fGeom.computeVertexNormals();
 
-    // ── Left & Right Lens Frames ──
-    var lensCenterX = bridgeW / 2 + outerW / 2;
+    var cx = bridgeW / 2 + oW / 2;
 
-    var leftFrame = new THREE.Mesh(frameGeom, frameMat);
-    leftFrame.position.set(-lensCenterX, 0, -frameDepth / 2);
+    // Left & Right frames
+    var lf = new THREE.Mesh(fGeom, frameMat);
+    lf.position.set(-cx, 0, -fd / 2);
+    var rf = new THREE.Mesh(fGeom.clone(), frameMat);
+    rf.position.set(cx, 0, -fd / 2);
 
-    var rightFrame = new THREE.Mesh(frameGeom.clone(), frameMat);
-    rightFrame.position.set(lensCenterX, 0, -frameDepth / 2);
+    // Lenses
+    var lGeom = new THREE.ShapeBufferGeometry(rrShape(lensW - 0.5, lensH - 0.5, lensR - 0.3), 12);
+    var ll = new THREE.Mesh(lGeom, lensMat);
+    ll.position.set(-cx, 0, 0.5);
+    var rl = new THREE.Mesh(lGeom.clone(), lensMat);
+    rl.position.set(cx, 0, 0.5);
 
-    // ── Lenses ──
-    var lensShape = createRoundedRectShape(lensW - 0.5, lensH - 0.5, lensCornerR - 0.3);
-    var lensGeom = new THREE.ShapeBufferGeometry(lensShape, 12);
+    // Bridge
+    var bGeo = new THREE.BoxBufferGeometry(bridgeW + ftSide, 3.5, fd * 0.7);
+    var br = new THREE.Mesh(bGeo, frameMat);
+    br.position.set(0, lensH * 0.15 + vOff, 0);
 
-    var leftLens = new THREE.Mesh(lensGeom, lensMat);
-    leftLens.position.set(-lensCenterX, 0, 0);
+    // Temple arms - extend in -Z (behind the face)
+    var tGeo = new THREE.BoxBufferGeometry(tW, tH, tLen);
+    var tOutX = cx + oW / 2 - ftSide / 2;
+    var tY = lensH * 0.15 + vOff;
 
-    var rightLens = new THREE.Mesh(lensGeom.clone(), lensMat);
-    rightLens.position.set(lensCenterX, 0, 0);
+    var tSplay = 0.08; // ~4.6° outward splay
 
-    // ── Bridge ──
-    var bridgeGeo = new THREE.BoxBufferGeometry(bridgeW + frameSideThick, 3.5, frameDepth * 0.7);
-    var bridge = new THREE.Mesh(bridgeGeo, frameMat);
-    bridge.position.set(0, lensH * 0.18 + vertOff, 0);
+    // Left temple (pivot at hinge, splay outward)
+    var ltPivot = new THREE.Group();
+    ltPivot.position.set(-tOutX, tY, -fd / 2);
+    var lt = new THREE.Mesh(tGeo, frameMat);
+    lt.position.set(0, 0, -tLen / 2);
+    ltPivot.add(lt);
+    ltPivot.rotation.y = -tSplay;
 
-    // ── Temple Arms (extending in -Z direction = behind the head) ──
-    var templeGeo = new THREE.BoxBufferGeometry(templeW, templeH, templeLen);
+    // Right temple (pivot at hinge, splay outward)
+    var rtPivot = new THREE.Group();
+    rtPivot.position.set(tOutX, tY, -fd / 2);
+    var rt = new THREE.Mesh(tGeo.clone(), frameMat);
+    rt.position.set(0, 0, -tLen / 2);
+    rtPivot.add(rt);
+    rtPivot.rotation.y = tSplay;
 
-    var templeOuterX = lensCenterX + outerW / 2 - frameSideThick / 2;
-    var ty = lensH * 0.18 + vertOff;
+    // Nose pads
+    var npMat = new THREE.MeshStandardMaterial({
+        color: 0xbbbbbb, metalness: 0, roughness: 0.6,
+        transparent: true, opacity: 0.4
+    });
+    var npGeo = new THREE.SphereBufferGeometry(2.5, 8, 6);
+    var lnp = new THREE.Mesh(npGeo, npMat);
+    lnp.position.set(-bridgeW / 2 + 1, -lensH * 0.22, fd * 0.15);
+    var rnp = new THREE.Mesh(npGeo, npMat);
+    rnp.position.set(bridgeW / 2 - 1, -lensH * 0.22, fd * 0.15);
 
-    var leftTemple = new THREE.Mesh(templeGeo, frameMat);
-    leftTemple.position.set(-templeOuterX, ty, -(frameDepth / 2 + templeLen / 2));
+    // Assemble
+    g.add(lf, rf, ll, rl, br, ltPivot, rtPivot, lnp, rnp);
 
-    var rightTemple = new THREE.Mesh(templeGeo.clone(), frameMat);
-    rightTemple.position.set(templeOuterX, ty, -(frameDepth / 2 + templeLen / 2));
-
-    // ── Temple End Curves (ear hooks) ──
-    var hookGeo = new THREE.BoxBufferGeometry(templeW, templeH * 2, templeH * 3);
-
-    var leftHook = new THREE.Mesh(hookGeo, frameMat);
-    leftHook.position.set(-templeOuterX, ty - templeH, -(frameDepth / 2 + templeLen + templeH));
-
-    var rightHook = new THREE.Mesh(hookGeo.clone(), frameMat);
-    rightHook.position.set(templeOuterX, ty - templeH, -(frameDepth / 2 + templeLen + templeH));
-
-    // ── Nose Pads ──
-    var nosePadGeo = new THREE.SphereBufferGeometry(2.5, 8, 6);
-
-    var leftNosePad = new THREE.Mesh(nosePadGeo, nosePadMat);
-    leftNosePad.position.set(-bridgeW / 2 + 1, -lensH * 0.2, frameDepth * 0.1);
-
-    var rightNosePad = new THREE.Mesh(nosePadGeo, nosePadMat);
-    rightNosePad.position.set(bridgeW / 2 - 1, -lensH * 0.2, frameDepth * 0.1);
-
-    // ── Assemble ──
-    glasses.add(leftFrame, rightFrame);
-    glasses.add(leftLens, rightLens);
-    glasses.add(bridge);
-    glasses.add(leftTemple, rightTemple);
-    glasses.add(leftHook, rightHook);
-    glasses.add(leftNosePad, rightNosePad);
-
-    // Set render order for all meshes
-    glasses.traverse(function(child) {
-        if (child.isMesh) {
-            child.renderOrder = 3;
-        }
+    g.traverse(function(c) {
+        if (c.isMesh) c.renderOrder = 3;
     });
 
-    return glasses;
+    return g;
 }
 
-// ── Head Occluder ────────────────────────────────────────────────────────────
+// ── Dynamic Face Mesh Occluder ─────────────────────────────────────────────────
+function createDynamicFaceMesh() {
+    // Triangle fan from 36 face oval landmarks + centroid center.
+    // Vertices are updated each frame directly from landmark world coordinates.
+    // No rigid transform needed — the mesh follows the face contour exactly.
+    // This provides natural asymmetric occlusion: visible-side temple stays in
+    // front of the face surface, hidden-side temple goes behind it.
+    var nOval = FACE_OVAL.length;
+    var nVerts = nOval + 1; // oval points + center
 
-function createHeadOccluder() {
-    var geo = new THREE.SphereBufferGeometry(1, 20, 16);
+    var positions = new Float32Array(nVerts * 3);
+    var indices = [];
+
+    // Triangle fan: center (0) → oval[i] (i+1) → oval[next] (next+1)
+    for (var i = 0; i < nOval; i++) {
+        indices.push(0, i + 1, ((i + 1) % nOval) + 1);
+    }
+
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+
     var mat = new THREE.MeshBasicMaterial({
         colorWrite: false,
-        side: THREE.FrontSide
+        side: THREE.DoubleSide
     });
+
     var mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 1;
+    mesh.frustumCulled = false;
     return mesh;
 }
 
 // ── Scene Setup ────────────────────────────────────────────────────────────────
-
 function setVideoContent() {
     var vw = video.videoWidth;
     var vh = video.videoHeight;
 
-    // OrthographicCamera eliminates perspective distortion at edges
-    camera = new THREE.OrthographicCamera(-vw / 2, vw / 2, vh / 2, -vh / 2, 0.1, 5000);
+    // Orthographic camera - no perspective distortion at edges
+    camera = new THREE.OrthographicCamera(
+        -vw / 2, vw / 2,
+        vh / 2, -vh / 2,
+        0.1, 5000
+    );
     camera.position.set(-vw / 2, -vh / 2, 500);
 
     bg = new THREE.Texture(video);
@@ -308,24 +287,23 @@ function setVideoContent() {
 }
 
 function setTheLights() {
-    var keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
-    keyLight.position.set(0, 100, 150);
-    scene.add(keyLight);
+    var key = new THREE.DirectionalLight(0xffffff, 1.1);
+    key.position.set(0, 100, 200);
+    scene.add(key);
 
-    var fillLight = new THREE.DirectionalLight(0xeeeeff, 0.45);
-    fillLight.position.set(-80, 30, 100);
-    scene.add(fillLight);
+    var fill = new THREE.DirectionalLight(0xeeeeff, 0.45);
+    fill.position.set(-80, 30, 100);
+    scene.add(fill);
 
-    var rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
-    rimLight.position.set(60, 60, -80);
-    scene.add(rimLight);
+    var rim = new THREE.DirectionalLight(0xffffff, 0.3);
+    rim.position.set(60, 60, -80);
+    scene.add(rim);
 
-    var ambientLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
-    scene.add(ambientLight);
+    var amb = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
+    scene.add(amb);
 }
 
 // ── Initialization ─────────────────────────────────────────────────────────────
-
 export function IntializeThreejs(objName) {
     video = document.getElementById('tryon-video');
     container = document.getElementById('threejsContainer');
@@ -333,12 +311,12 @@ export function IntializeThreejs(objName) {
     setVideoContent();
     setTheLights();
 
-    // Create head occluder (replaces facemesh.obj)
-    headOccluder = createHeadOccluder();
-    headOccluder.visible = false;
-    scene.add(headOccluder);
+    // Dynamic face mesh occluder (vertices updated each frame from landmarks)
+    faceObj = createDynamicFaceMesh();
+    faceObj.visible = false;
+    scene.add(faceObj);
 
-    // Create procedural sunglasses
+    // Procedural sunglasses
     glassesObj = createSunglasses();
     glassesObj.visible = false;
     scene.add(glassesObj);
@@ -361,8 +339,7 @@ export function IntializeThreejs(objName) {
 }
 
 function onWindowResize() {
-    var vw = video.videoWidth;
-    var vh = video.videoHeight;
+    var vw = video.videoWidth, vh = video.videoHeight;
     camera.left = -vw / 2;
     camera.right = vw / 2;
     camera.top = vh / 2;
@@ -378,7 +355,6 @@ function animate() {
 }
 
 // ── MediaPipe Engine ───────────────────────────────────────────────────────────
-
 export async function IntializeEngine() {
     var vision = await import(
         /* webpackIgnore: true */
@@ -413,7 +389,6 @@ function scheduleNextPrediction() {
 }
 
 // ── Prediction Loop ────────────────────────────────────────────────────────────
-
 function renderPrediction() {
     if (predictionInFlight) {
         scheduleNextPrediction();
@@ -431,132 +406,121 @@ function renderPrediction() {
 
     if (results.faceLandmarks && results.faceLandmarks.length > 0 && glassesObj) {
         glassesObj.visible = true;
-        if (headOccluder) headOccluder.visible = true;
+        if (faceObj) faceObj.visible = true;
 
-        var points = lmToPixels(results.faceLandmarks[0]);
+        var pts = toPixels(results.faceLandmarks[0]);
 
-        // ── Extract Key Landmarks ──
-        var leftEye = eyeCenter(points, LM.leftEyeInner, LM.leftEyeOuter);
-        var rightEye = eyeCenter(points, LM.rightEyeInner, LM.rightEyeOuter);
-        var noseBridge = toVec(points, LM.noseBridge);
-        var noseTip = toVec(points, LM.noseTip);
-        var forehead = toVec(points, LM.forehead);
-        var chin = toVec(points, LM.chin);
-        var leftTemple = toVec(points, LM.leftTemple);
-        var rightTemple = toVec(points, LM.rightTemple);
-        var leftCheek = toVec(points, LM.leftCheek);
-        var rightCheek = toVec(points, LM.rightCheek);
+        // Key landmarks
+        var lEye = eyeMid(pts, LM.leftEyeInner, LM.leftEyeOuter);
+        var rEye = eyeMid(pts, LM.rightEyeInner, LM.rightEyeOuter);
+        var nose = toV(pts, LM.noseBridge);
+        var nTip = toV(pts, LM.noseTip);
+        var fHead = toV(pts, LM.forehead);
+        var chn = toV(pts, LM.chin);
+        var lTmp = toV(pts, LM.leftTemple);
+        var rTmp = toV(pts, LM.rightTemple);
+        var lChk = toV(pts, LM.leftCheek);
+        var rChk = toV(pts, LM.rightCheek);
 
-        var eyeMid = mid(leftEye, rightEye);
+        var eMid = mid(lEye, rEye);
 
-        // ── Face Measurements ──
-        var eyeWidth = leftEye.distanceTo(rightEye);
-        var templeWidth = leftTemple.distanceTo(rightTemple);
-        var cheekWidth = leftCheek.distanceTo(rightCheek);
-        var faceWidth = Math.max(eyeWidth, templeWidth, cheekWidth);
-        var faceHeight = forehead.distanceTo(chin);
+        // Face measurements
+        var eW = lEye.distanceTo(rEye);
+        var tW = lTmp.distanceTo(rTmp);
+        var cW = lChk.distanceTo(rChk);
+        var fW = Math.max(eW, tW, cW);
+        var fH = fHead.distanceTo(chn);
 
-        // ── Orientation from Landmarks Only ──
-        var xAxis = rightEye.clone().sub(leftEye).normalize();
-        var yAxisRaw = forehead.clone().sub(chin).normalize();
-        var zAxis = xAxis.clone().cross(yAxisRaw).normalize();
+        // ── Orientation (landmark-based only) ──
+        var xAxis = rEye.clone().sub(lEye).normalize();
+        var yRaw = fHead.clone().sub(chn).normalize();
+        var zAxis = xAxis.clone().cross(yRaw).normalize();
 
-        // Ensure zAxis points toward camera
-        var faceNormal = computeNormal(
-            toVec(points, LM.leftEyeOuter),
-            toVec(points, LM.rightEyeOuter),
-            toVec(points, LM.noseBridge)
-        );
-        if (zAxis.dot(faceNormal) < 0) {
-            zAxis.negate();
-        }
+        // Ensure zAxis points toward camera (+Z in scene space)
+        if (zAxis.z < 0) zAxis.negate();
 
-        // Recompute yAxis for perfect orthogonality
         var yAxis = zAxis.clone().cross(xAxis).normalize();
 
-        // Build rotation from landmark basis
         var rotMat = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
         var targetQuat = new THREE.Quaternion().setFromRotationMatrix(rotMat);
 
+        // Glasses need Z-flip (model is upside-down without it)
+        var flipZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI);
+        targetQuat.multiply(flipZ);
+
         // ── Position ──
-        var bridgeToTip = noseTip.clone().sub(noseBridge);
-        var depthAdjust = clamp(bridgeToTip.length() * 0.1, 0, 6);
+        var btt = nTip.clone().sub(nose);
+        var depAdj = clamp(btt.length() * 0.1, 0, 6);
 
-        var targetGlassesPos = eyeMid.clone()
-            .addScaledVector(xAxis, CONFIG.glassesCenterX)
-            .addScaledVector(yAxis, CONFIG.glassesVerticalOffset)
-            .addScaledVector(zAxis, CONFIG.glassesDepthOffset + depthAdjust);
-
-        // ── Occluder Position ──
-        var targetOccluderPos = eyeMid.clone()
-            .addScaledVector(yAxis, CONFIG.occluderVerticalOffset)
-            .addScaledVector(zAxis, faceWidth * CONFIG.occluderDepthOffset);
-
-        var targetOccluderScale = new THREE.Vector3(
-            faceWidth * CONFIG.occluderScaleX,
-            faceHeight * CONFIG.occluderScaleY,
-            faceWidth * CONFIG.occluderScaleZ
-        );
+        var tGPos = eMid.clone()
+            .addScaledVector(xAxis, CFG.glassesCenterX)
+            .addScaledVector(yAxis, CFG.glassesDown)
+            .addScaledVector(zAxis, CFG.glassesDepth + depAdj);
 
         // ── Scale ──
-        var widthScale = faceWidth / CONFIG.referenceHeadWidth;
-        var heightScale = faceHeight / CONFIG.referenceFaceHeight;
-        var baseScale = (widthScale * 0.7) + (heightScale * 0.3);
+        var wS = fW / CFG.refHeadWidth;
+        var hS = fH / CFG.refFaceHeight;
+        var bS = (wS * 0.7) + (hS * 0.3);
+        var gS = bS * CFG.glassesScale;
 
-        var glassesScale = baseScale * CONFIG.glassesScaleMultiplier;
+        var tGScale = new THREE.Vector3(gS, gS, gS);
 
-        var targetGlassesScale = new THREE.Vector3(
-            glassesScale,
-            glassesScale,
-            glassesScale
-        );
+        // ── Adaptive smoothing ──
+        var mov = tGPos.distanceTo(sm.prev);
+        var aDelta = qDelta(sm.gQuat, targetQuat);
 
-        // ── Adaptive Smoothing ──
-        var movement = targetGlassesPos.distanceTo(smoothing.prevTargetPos);
-        var angleDelta = quatDelta(smoothing.glassesQuat, targetQuat);
+        var aP = clamp(0.12 + mov * 0.012, 0.12, 0.5);
+        var aR = clamp(0.12 + aDelta * 0.4, 0.12, 0.55);
+        var aS = clamp(0.14 + mov * 0.008, 0.14, 0.4);
 
-        var alphaPos = clamp(0.1 + movement * 0.012, 0.1, 0.5);
-        var alphaRot = clamp(0.1 + angleDelta * 0.4, 0.1, 0.55);
-        var alphaScale = clamp(0.12 + movement * 0.008, 0.12, 0.4);
-
-        if (!smoothing.ready) {
-            smoothing.glassesPos.copy(targetGlassesPos);
-            smoothing.glassesQuat.copy(targetQuat);
-            smoothing.glassesScale.copy(targetGlassesScale);
-            smoothing.occluderPos.copy(targetOccluderPos);
-            smoothing.occluderQuat.copy(targetQuat);
-            smoothing.occluderScale.copy(targetOccluderScale);
-            smoothing.ready = true;
+        if (!sm.ready) {
+            sm.gPos.copy(tGPos);
+            sm.gQuat.copy(targetQuat);
+            sm.gScale.copy(tGScale);
+            sm.ready = true;
         } else {
-            smoothing.glassesPos.lerp(targetGlassesPos, alphaPos);
-            smoothing.glassesQuat.slerp(targetQuat, alphaRot);
-            smoothing.glassesScale.lerp(targetGlassesScale, alphaScale);
-
-            smoothing.occluderPos.lerp(targetOccluderPos, alphaPos);
-            smoothing.occluderQuat.slerp(targetQuat, alphaRot);
-            smoothing.occluderScale.lerp(targetOccluderScale, alphaScale);
+            sm.gPos.lerp(tGPos, aP);
+            sm.gQuat.slerp(targetQuat, aR);
+            sm.gScale.lerp(tGScale, aS);
         }
 
-        smoothing.prevTargetPos.copy(targetGlassesPos);
+        sm.prev.copy(tGPos);
 
-        // ── Apply to Glasses ──
-        glassesObj.position.copy(smoothing.glassesPos);
-        glassesObj.quaternion.copy(smoothing.glassesQuat);
-        glassesObj.scale.copy(smoothing.glassesScale);
+        // Apply to glasses
+        glassesObj.position.copy(sm.gPos);
+        glassesObj.quaternion.copy(sm.gQuat);
+        glassesObj.scale.copy(sm.gScale);
         glassesObj.updateWorldMatrix(true, true);
 
-        // ── Apply to Head Occluder ──
-        if (headOccluder) {
-            headOccluder.position.copy(smoothing.occluderPos);
-            headOccluder.quaternion.copy(smoothing.occluderQuat);
-            headOccluder.scale.copy(smoothing.occluderScale);
-            headOccluder.updateWorldMatrix(true, true);
+        // Update dynamic face mesh vertices from landmarks
+        if (faceObj) {
+            var posAttr = faceObj.geometry.getAttribute('position');
+            var cx = 0, cy = 0, cz = 0;
+            var fwdOff = 8; // push mesh in front of temple hinge line
+            for (var fi = 0; fi < FACE_OVAL.length; fi++) {
+                var fv = toV(pts, FACE_OVAL[fi]);
+                fv.addScaledVector(zAxis, fwdOff);
+                posAttr.setXYZ(fi + 1, fv.x, fv.y, fv.z);
+                cx += fv.x; cy += fv.y; cz += fv.z;
+            }
+            cx /= FACE_OVAL.length;
+            cy /= FACE_OVAL.length;
+            cz /= FACE_OVAL.length;
+            // Push center behind face to form cone → approximates head volume
+            // Fixes: temples visible when tilting face down
+            var coneD = fW * 0.5;
+            posAttr.setXYZ(0,
+                cx - zAxis.x * coneD,
+                cy - zAxis.y * coneD,
+                cz - zAxis.z * coneD
+            );
+            posAttr.needsUpdate = true;
         }
 
     } else {
         if (glassesObj) glassesObj.visible = false;
-        if (headOccluder) headOccluder.visible = false;
-        smoothing.ready = false;
+        if (faceObj) faceObj.visible = false;
+        sm.ready = false;
     }
 
     predictionInFlight = false;
