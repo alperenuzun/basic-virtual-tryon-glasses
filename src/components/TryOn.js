@@ -2,8 +2,16 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import '../style/TryOn.style.css';
 import { initializeEngine, initializeThreejs } from '../engine';
 
+const LOADING_STEPS = [
+    { key: 'camera', label: 'Camera access' },
+    { key: 'scene', label: '3D scene setup' },
+    { key: 'engine', label: 'AI model loading' },
+];
+
 export const TryOn = () => {
+    const [loadingStep, setLoadingStep] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+    const [isFadingOut, setIsFadingOut] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const recorderRef = useRef(null);
     const chunksRef = useRef([]);
@@ -12,6 +20,8 @@ export const TryOn = () => {
         async function init() {
             var video = document.getElementById('tryon-video');
 
+            // Step 0: Camera access
+            setLoadingStep(0);
             await navigator.mediaDevices.getUserMedia({
                 audio: false,
                 video: { facingMode: 'user' }
@@ -19,11 +29,22 @@ export const TryOn = () => {
                 video.srcObject = stream;
             });
 
-            video.oncanplay = () => {
+            video.oncanplay = async () => {
                 video.play();
+
+                // Step 1: 3D scene setup
+                setLoadingStep(1);
                 initializeThreejs("glasses_premium.gltf");
-                initializeEngine();
-                setIsLoading(false);
+
+                // Step 2: AI model loading
+                setLoadingStep(2);
+                await initializeEngine();
+
+                // All done — fade out
+                setIsFadingOut(true);
+                setTimeout(() => {
+                    setIsLoading(false);
+                }, 500);
             };
         }
 
@@ -87,9 +108,40 @@ export const TryOn = () => {
 
             <div className="tryon-viewport">
                 {isLoading && (
-                    <div className="tryon-loading">
-                        <div className="tryon-spinner"></div>
-                        <p>Initializing camera...</p>
+                    <div className={'tryon-loading' + (isFadingOut ? ' fade-out' : '')}>
+                        <div className="tryon-loading-icon">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="6" cy="12" r="4"/>
+                                <circle cx="18" cy="12" r="4"/>
+                                <path d="M10 12h4"/>
+                                <path d="M2 12h0"/>
+                                <path d="M22 12h0"/>
+                            </svg>
+                        </div>
+                        <div className="tryon-loading-steps">
+                            {LOADING_STEPS.map((step, i) => {
+                                var isDone = i < loadingStep;
+                                var isActive = i === loadingStep;
+                                return (
+                                    <div
+                                        key={step.key}
+                                        className={'tryon-loading-step' + (isDone ? ' done' : '') + (isActive ? ' active' : '')}
+                                    >
+                                        <div className="tryon-step-indicator">
+                                            {isDone ? (
+                                                <svg className="tryon-step-check" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                                    <polyline points="2,5.5 4.5,8 8,2.5"/>
+                                                </svg>
+                                            ) : isActive ? (
+                                                <div className="tryon-step-spinner"></div>
+                                            ) : null}
+                                        </div>
+                                        {step.label}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <p className="tryon-loading-status">Preparing your experience</p>
                     </div>
                 )}
                 <div id="threejsContainer">

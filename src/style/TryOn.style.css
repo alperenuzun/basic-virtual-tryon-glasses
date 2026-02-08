@@ -83,27 +83,112 @@
     justify-content: center;
     background: #111118;
     z-index: 10;
-    gap: 16px;
+    gap: 28px;
+    transition: opacity 0.5s ease;
 }
 
-.tryon-loading p {
+.tryon-loading.fade-out {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Glasses icon */
+.tryon-loading-icon {
+    width: 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    animation: icon-pulse 2s ease-in-out infinite;
+}
+
+.tryon-loading-icon svg {
+    opacity: 0.5;
+}
+
+@keyframes icon-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.85; }
+}
+
+/* Progress steps */
+.tryon-loading-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 200px;
+}
+
+.tryon-loading-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     font-size: 13px;
-    color: #555568;
-    margin: 0;
-    letter-spacing: 0.5px;
+    color: #333344;
+    letter-spacing: 0.3px;
+    transition: color 0.3s ease;
 }
 
-.tryon-spinner {
-    width: 28px;
-    height: 28px;
-    border: 2.5px solid rgba(255, 255, 255, 0.08);
-    border-top-color: rgba(255, 255, 255, 0.7);
+.tryon-loading-step.active {
+    color: #888899;
+}
+
+.tryon-loading-step.done {
+    color: #555568;
+}
+
+.tryon-step-indicator {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1.5px solid rgba(255, 255, 255, 0.08);
+    transition: all 0.3s ease;
+}
+
+.tryon-loading-step.active .tryon-step-indicator {
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.tryon-loading-step.done .tryon-step-indicator {
+    border-color: rgba(130, 200, 130, 0.4);
+    background: rgba(130, 200, 130, 0.08);
+}
+
+/* Spinner inside active step */
+.tryon-step-spinner {
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid rgba(255, 255, 255, 0.1);
+    border-top-color: rgba(255, 255, 255, 0.6);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
 }
 
+/* Checkmark for completed step */
+.tryon-step-check {
+    width: 10px;
+    height: 10px;
+    color: rgba(130, 200, 130, 0.7);
+}
+
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+/* Loading status text */
+.tryon-loading-status {
+    font-size: 11px;
+    color: #333344;
+    margin: 0;
+    letter-spacing: 1px;
+    text-transform: uppercase;
 }
 
 /* ── Controls ────────────────────────────────────────────────────────────────── */
