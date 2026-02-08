@@ -1,22 +1,22 @@
 {
   "files": {
-    "main.css": "/basic-virtual-tryon-glasses/static/css/main.c020f4bd.chunk.css",
-    "main.js": "/basic-virtual-tryon-glasses/static/js/main.ea2fe755.chunk.js",
-    "main.js.map": "/basic-virtual-tryon-glasses/static/js/main.ea2fe755.chunk.js.map",
+    "main.css": "/basic-virtual-tryon-glasses/static/css/main.8e35ab17.chunk.css",
+    "main.js": "/basic-virtual-tryon-glasses/static/js/main.f60a757b.chunk.js",
+    "main.js.map": "/basic-virtual-tryon-glasses/static/js/main.f60a757b.chunk.js.map",
     "runtime-main.js": "/basic-virtual-tryon-glasses/static/js/runtime-main.1aa7a7ae.js",
     "runtime-main.js.map": "/basic-virtual-tryon-glasses/static/js/runtime-main.1aa7a7ae.js.map",
     "static/js/2.6bd86c86.chunk.js": "/basic-virtual-tryon-glasses/static/js/2.6bd86c86.chunk.js",
     "static/js/2.6bd86c86.chunk.js.map": "/basic-virtual-tryon-glasses/static/js/2.6bd86c86.chunk.js.map",
     "index.html": "/basic-virtual-tryon-glasses/index.html",
-    "precache-manifest.480a393af341d533c6cd7122ae5dda3d.js": "/basic-virtual-tryon-glasses/precache-manifest.480a393af341d533c6cd7122ae5dda3d.js",
+    "precache-manifest.662a20ce781b1e6f74e57a9265ecb2a5.js": "/basic-virtual-tryon-glasses/precache-manifest.662a20ce781b1e6f74e57a9265ecb2a5.js",
     "service-worker.js": "/basic-virtual-tryon-glasses/service-worker.js",
-    "static/css/main.c020f4bd.chunk.css.map": "/basic-virtual-tryon-glasses/static/css/main.c020f4bd.chunk.css.map",
+    "static/css/main.8e35ab17.chunk.css.map": "/basic-virtual-tryon-glasses/static/css/main.8e35ab17.chunk.css.map",
     "static/js/2.6bd86c86.chunk.js.LICENSE.txt": "/basic-virtual-tryon-glasses/static/js/2.6bd86c86.chunk.js.LICENSE.txt"
   },
   "entrypoints": [
     "static/js/runtime-main.1aa7a7ae.js",
     "static/js/2.6bd86c86.chunk.js",
-    "static/css/main.c020f4bd.chunk.css",
-    "static/js/main.ea2fe755.chunk.js"
+    "static/css/main.8e35ab17.chunk.css",
+    "static/js/main.f60a757b.chunk.js"
   ]
 }

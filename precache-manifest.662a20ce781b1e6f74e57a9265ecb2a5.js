@@ -1,11 +1,11 @@
 self.__precacheManifest = (self.__precacheManifest || []).concat([
   {
-    "revision": "845ef1dbfd6160931a3521210ad06406",
+    "revision": "b0345618908cab5592319cf00cef19fc",
     "url": "/basic-virtual-tryon-glasses/index.html"
   },
   {
-    "revision": "2fbce5fb399b27cfeea6",
-    "url": "/basic-virtual-tryon-glasses/static/css/main.c020f4bd.chunk.css"
+    "revision": "66e242b9b6460e0b3e47",
+    "url": "/basic-virtual-tryon-glasses/static/css/main.8e35ab17.chunk.css"
   },
   {
     "revision": "ae8f1cda7c4e27719bef",
@@ -16,8 +16,8 @@ self.__precacheManifest = (self.__precacheManifest || []).concat([
     "url": "/basic-virtual-tryon-glasses/static/js/2.6bd86c86.chunk.js.LICENSE.txt"
   },
   {
-    "revision": "2fbce5fb399b27cfeea6",
-    "url": "/basic-virtual-tryon-glasses/static/js/main.ea2fe755.chunk.js"
+    "revision": "66e242b9b6460e0b3e47",
+    "url": "/basic-virtual-tryon-glasses/static/js/main.f60a757b.chunk.js"
   },
   {
     "revision": "1bb59851f499a2130e71",
